@@ -145,8 +145,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     inputs.emissive  = vec3<f32>(0.0);
 
     let lit = viewport_pbr_shade(inputs);
-    let shadow = viewport_sample_csm(in.world_pos, n_lit);
-    return vec4<f32>(lit * shadow, 1.0);
+    return vec4<f32>(lit, 1.0);
 }
 
 // Outline-mask vertex stage. Fragment uses viewport_mask_fs from

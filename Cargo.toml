@@ -1,6 +1,6 @@
 [package]
 name = "viewport-lib-terrain"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 description = "Heightmap and splatmap terrain rendering for viewport-lib"
 readme = "README.md"
@@ -15,7 +15,7 @@ publish = true
 exclude = ["examples/"]
 
 [dependencies]
-viewport-lib = { path = "../viewport-lib", version = "0.17" }
+viewport-lib = { path = "../viewport-lib", version = "0.18" }
 wgpu = "27.0"
 glam = { version = "=0.30.10", features = ["bytemuck"] }
 bytemuck = { version = "1.25", features = ["derive"] }

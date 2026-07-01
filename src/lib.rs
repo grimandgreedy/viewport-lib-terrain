@@ -32,7 +32,9 @@ mod plugin;
 pub use detail::{
     DetailKind, DetailLayer, DetailScatterOutput, DetailScatterParams, scatter_terrain_details,
 };
-pub use item::{LAYER_COUNT, SplatmapData, TerrainCollection, TerrainItem, TerrainLayer};
+pub use item::{
+    LAYER_COUNT, LayerTextures, SplatmapData, TerrainCollection, TerrainItem, TerrainLayer,
+};
 pub use plugin::TerrainPlugin;
 
 /// Stable name used as the

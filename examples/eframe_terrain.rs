@@ -71,6 +71,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.92,
                 height_bias: 0.0,
+                ..Default::default()
             },
             // A.g: dirt
             TerrainLayer {
@@ -78,6 +79,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.85,
                 height_bias: 0.0,
+                ..Default::default()
             },
             // A.b: rock
             TerrainLayer {
@@ -85,6 +87,7 @@ impl App {
                 metallic: 0.05,
                 roughness: 0.70,
                 height_bias: 0.15,
+                ..Default::default()
             },
             // A.a: sand
             TerrainLayer {
@@ -92,6 +95,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.78,
                 height_bias: 0.0,
+                ..Default::default()
             },
             // B.r: pebbles (height-blends over sand and dirt)
             TerrainLayer {
@@ -99,6 +103,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.60,
                 height_bias: 0.55,
+                ..Default::default()
             },
             // B.g: moss (sneaks over grass at low spots)
             TerrainLayer {
@@ -106,6 +111,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.95,
                 height_bias: -0.15,
+                ..Default::default()
             },
             // B.b: snow (sits high)
             TerrainLayer {
@@ -113,6 +119,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.50,
                 height_bias: 0.30,
+                ..Default::default()
             },
             // B.a: dark rock vein (slightly raised over base rock)
             TerrainLayer {
@@ -120,6 +127,7 @@ impl App {
                 metallic: 0.10,
                 roughness: 0.55,
                 height_bias: 0.40,
+                ..Default::default()
             },
         ];
 
@@ -313,10 +321,8 @@ fn build_splatmaps(
             let xr = if x + 1 == w { x } else { x + 1 };
             let yl = if y == 0 { y } else { y - 1 };
             let yr = if y + 1 == h { y } else { y + 1 };
-            let dzdx = (height_at(xr, y) - height_at(xl, y))
-                / ((xr - xl).max(1) as f32 * dx_world);
-            let dzdy = (height_at(x, yr) - height_at(x, yl))
-                / ((yr - yl).max(1) as f32 * dy_world);
+            let dzdx = (height_at(xr, y) - height_at(xl, y)) / ((xr - xl).max(1) as f32 * dx_world);
+            let dzdy = (height_at(x, yr) - height_at(x, yl)) / ((yr - yl).max(1) as f32 * dy_world);
             let slope = (dzdx * dzdx + dzdy * dzdy).sqrt();
 
             let alt = ((z - h_min) / span).clamp(0.0, 1.0);

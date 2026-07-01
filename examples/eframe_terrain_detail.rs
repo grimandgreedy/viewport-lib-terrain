@@ -114,14 +114,62 @@ impl App {
         );
 
         let layers: [TerrainLayer; LAYER_COUNT] = [
-            TerrainLayer { albedo: [0.26, 0.42, 0.18], metallic: 0.0, roughness: 0.92, height_bias: 0.0 },
-            TerrainLayer { albedo: [0.42, 0.28, 0.16], metallic: 0.0, roughness: 0.85, height_bias: 0.0 },
-            TerrainLayer { albedo: [0.46, 0.44, 0.42], metallic: 0.05, roughness: 0.70, height_bias: 0.15 },
-            TerrainLayer { albedo: [0.82, 0.74, 0.48], metallic: 0.0, roughness: 0.80, height_bias: 0.0 },
-            TerrainLayer { albedo: [0.58, 0.52, 0.44], metallic: 0.0, roughness: 0.55, height_bias: 0.55 },
-            TerrainLayer { albedo: [0.20, 0.34, 0.16], metallic: 0.0, roughness: 0.95, height_bias: -0.15 },
-            TerrainLayer { albedo: [0.94, 0.95, 0.98], metallic: 0.0, roughness: 0.45, height_bias: 0.50 },
-            TerrainLayer { albedo: [0.22, 0.20, 0.18], metallic: 0.10, roughness: 0.55, height_bias: 0.40 },
+            TerrainLayer {
+                albedo: [0.26, 0.42, 0.18],
+                metallic: 0.0,
+                roughness: 0.92,
+                height_bias: 0.0,
+                ..Default::default()
+            },
+            TerrainLayer {
+                albedo: [0.42, 0.28, 0.16],
+                metallic: 0.0,
+                roughness: 0.85,
+                height_bias: 0.0,
+                ..Default::default()
+            },
+            TerrainLayer {
+                albedo: [0.46, 0.44, 0.42],
+                metallic: 0.05,
+                roughness: 0.70,
+                height_bias: 0.15,
+                ..Default::default()
+            },
+            TerrainLayer {
+                albedo: [0.82, 0.74, 0.48],
+                metallic: 0.0,
+                roughness: 0.80,
+                height_bias: 0.0,
+                ..Default::default()
+            },
+            TerrainLayer {
+                albedo: [0.58, 0.52, 0.44],
+                metallic: 0.0,
+                roughness: 0.55,
+                height_bias: 0.55,
+                ..Default::default()
+            },
+            TerrainLayer {
+                albedo: [0.20, 0.34, 0.16],
+                metallic: 0.0,
+                roughness: 0.95,
+                height_bias: -0.15,
+                ..Default::default()
+            },
+            TerrainLayer {
+                albedo: [0.94, 0.95, 0.98],
+                metallic: 0.0,
+                roughness: 0.45,
+                height_bias: 0.50,
+                ..Default::default()
+            },
+            TerrainLayer {
+                albedo: [0.22, 0.20, 0.18],
+                metallic: 0.10,
+                roughness: 0.55,
+                height_bias: 0.40,
+                ..Default::default()
+            },
         ];
 
         let mut settings = ItemSettings::default();
@@ -208,7 +256,10 @@ impl eframe::App for App {
 
         egui::SidePanel::right("hud").show(ctx, |ui| {
             ui.heading("Grass + trees");
-            ui.label(format!("eye: ({:.0}, {:.0}, {:.0})", self.last_eye.x, self.last_eye.y, self.last_eye.z));
+            ui.label(format!(
+                "eye: ({:.0}, {:.0}, {:.0})",
+                self.last_eye.x, self.last_eye.y, self.last_eye.z
+            ));
             ui.separator();
             ui.label("Grass (billboards on grass layer)");
             ui.add(egui::Slider::new(&mut self.ui.grass_density, 0.0..=4.0).text("density /m^2"));
@@ -221,8 +272,22 @@ impl eframe::App for App {
             ui.add(egui::Slider::new(&mut self.ui.tree_radius, 20.0..=250.0).text("radius"));
             ui.add(egui::Slider::new(&mut self.ui.tree_switch, 5.0..=150.0).text("switch dist"));
             ui.separator();
-            ui.label(format!("sprites: {}", self.detail_out.sprites.iter().map(|s| s.positions.len()).sum::<usize>()));
-            ui.label(format!("mesh instances: {}", self.detail_out.mesh_instances.iter().map(|m| m.transforms.len()).sum::<usize>()));
+            ui.label(format!(
+                "sprites: {}",
+                self.detail_out
+                    .sprites
+                    .iter()
+                    .map(|s| s.positions.len())
+                    .sum::<usize>()
+            ));
+            ui.label(format!(
+                "mesh instances: {}",
+                self.detail_out
+                    .mesh_instances
+                    .iter()
+                    .map(|m| m.transforms.len())
+                    .sum::<usize>()
+            ));
             ui.separator();
             ui.label(
                 "Detail batches are rebuilt every frame around the camera \
@@ -261,7 +326,9 @@ impl eframe::App for App {
                 }
                 for event in &i.events {
                     match event {
-                        egui::Event::PointerButton { button, pressed, .. } => {
+                        egui::Event::PointerButton {
+                            button, pressed, ..
+                        } => {
                             let vp_button = match button {
                                 egui::PointerButton::Primary => viewport_lib::MouseButton::Left,
                                 egui::PointerButton::Secondary => viewport_lib::MouseButton::Right,
@@ -280,8 +347,7 @@ impl eframe::App for App {
                                     state: ButtonState::Pressed,
                                 });
                             } else {
-                                if self.drag_in_viewport
-                                    || *button != egui::PointerButton::Primary
+                                if self.drag_in_viewport || *button != egui::PointerButton::Primary
                                 {
                                     self.controller.push_event(ViewportEvent::MouseButton {
                                         button: vp_button,
@@ -328,7 +394,9 @@ impl eframe::App for App {
 
             frame_data.scene.submit_plugin_items(
                 viewport_lib_terrain::TYPE_NAME,
-                TerrainCollection { items: vec![self.terrain.clone()] },
+                TerrainCollection {
+                    items: vec![self.terrain.clone()],
+                },
             );
 
             // Scatter around the orbit focal point on the ground, not
@@ -341,7 +409,10 @@ impl eframe::App for App {
             };
             let layers = self.build_detail_layers();
             scatter_terrain_details(&self.terrain, &layers, &params, &mut self.detail_out);
-            frame_data.scene.sprite_items.extend(self.detail_out.sprites.iter().cloned());
+            frame_data
+                .scene
+                .sprite_items
+                .extend(self.detail_out.sprites.iter().cloned());
             frame_data
                 .scene
                 .mesh_instances
@@ -428,10 +499,10 @@ fn build_splatmaps(
             let fx = sx as f32 * scale_x;
             let fy = sy as f32 * scale_y;
             let z = sample_bilinear(fx, fy);
-            let dzdx = (sample_bilinear(fx + s, fy) - sample_bilinear(fx - s, fy))
-                / (2.0 * dx_world_h);
-            let dzdy = (sample_bilinear(fx, fy + s) - sample_bilinear(fx, fy - s))
-                / (2.0 * dy_world_h);
+            let dzdx =
+                (sample_bilinear(fx + s, fy) - sample_bilinear(fx - s, fy)) / (2.0 * dx_world_h);
+            let dzdy =
+                (sample_bilinear(fx, fy + s) - sample_bilinear(fx, fy - s)) / (2.0 * dy_world_h);
             let slope = (dzdx * dzdx + dzdy * dzdy).sqrt();
             let alt = ((z - h_min) / span).clamp(0.0, 1.0);
 

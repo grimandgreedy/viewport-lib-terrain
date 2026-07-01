@@ -96,6 +96,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.92,
                 height_bias: 0.0,
+                ..Default::default()
             },
             // A.g: dirt
             TerrainLayer {
@@ -103,6 +104,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.85,
                 height_bias: 0.0,
+                ..Default::default()
             },
             // A.b: rock
             TerrainLayer {
@@ -110,6 +112,7 @@ impl App {
                 metallic: 0.05,
                 roughness: 0.70,
                 height_bias: 0.15,
+                ..Default::default()
             },
             // A.a: sand
             TerrainLayer {
@@ -117,6 +120,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.80,
                 height_bias: 0.0,
+                ..Default::default()
             },
             // B.r: pebbles
             TerrainLayer {
@@ -124,6 +128,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.55,
                 height_bias: 0.55,
+                ..Default::default()
             },
             // B.g: moss
             TerrainLayer {
@@ -131,6 +136,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.95,
                 height_bias: -0.15,
+                ..Default::default()
             },
             // B.b: snow
             TerrainLayer {
@@ -138,6 +144,7 @@ impl App {
                 metallic: 0.0,
                 roughness: 0.45,
                 height_bias: 0.50,
+                ..Default::default()
             },
             // B.a: dark rock vein
             TerrainLayer {
@@ -145,6 +152,7 @@ impl App {
                 metallic: 0.10,
                 roughness: 0.55,
                 height_bias: 0.40,
+                ..Default::default()
             },
         ];
 
@@ -186,7 +194,10 @@ impl eframe::App for App {
 
         egui::SidePanel::right("hud").show(ctx, |ui| {
             ui.heading("Terrain LOD demo");
-            ui.label(format!("pixels_per_point: {:.2}", self.last_pixels_per_point));
+            ui.label(format!(
+                "pixels_per_point: {:.2}",
+                self.last_pixels_per_point
+            ));
             ui.label(format!("terrain: {0}x{0}", TERRAIN_DIM));
             ui.label(format!("world: {0}m x {0}m", WORLD_SIZE as i32));
             ui.label(format!(
@@ -196,18 +207,12 @@ impl eframe::App for App {
             ui.separator();
             ui.label("Height-blend strength");
             ui.add(
-                egui::Slider::new(
-                    &mut self.terrain.height_blend_strength,
-                    0.0..=40.0,
-                )
-                .text("strength"),
+                egui::Slider::new(&mut self.terrain.height_blend_strength, 0.0..=40.0)
+                    .text("strength"),
             );
             ui.add(
-                egui::Slider::new(
-                    &mut self.terrain.height_blend_noise_scale,
-                    8.0..=256.0,
-                )
-                .text("noise scale"),
+                egui::Slider::new(&mut self.terrain.height_blend_noise_scale, 8.0..=256.0)
+                    .text("noise scale"),
             );
             ui.separator();
             ui.label("Layers");
@@ -240,10 +245,8 @@ impl eframe::App for App {
                         ctrl: i.modifiers.command,
                     },
                 ));
-                let pointer_in_viewport = i
-                    .pointer
-                    .interact_pos()
-                    .map_or(false, |p| rect.contains(p));
+                let pointer_in_viewport =
+                    i.pointer.interact_pos().map_or(false, |p| rect.contains(p));
                 if let Some(p) = i.pointer.interact_pos() {
                     let local = glam::Vec2::new(p.x - rect.left(), p.y - rect.top());
                     self.cursor_viewport = Some(local);
@@ -279,8 +282,7 @@ impl eframe::App for App {
                                     state: ButtonState::Pressed,
                                 });
                             } else {
-                                if self.drag_in_viewport
-                                    || *button != egui::PointerButton::Primary
+                                if self.drag_in_viewport || *button != egui::PointerButton::Primary
                                 {
                                     self.controller.push_event(ViewportEvent::MouseButton {
                                         button: vp_button,
@@ -458,7 +460,6 @@ fn build_splatmaps(
     }
     (out_a, out_b)
 }
-
 
 fn smooth_band(x: f32, lo: f32, hi: f32) -> f32 {
     let center = (lo + hi) * 0.5;

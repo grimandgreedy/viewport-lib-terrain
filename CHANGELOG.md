@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Surface layers can sample a diffuse texture instead of a flat colour. `TerrainItem` holds an optional `LayerTextures` array with one RGBA texture per layer; each `TerrainLayer` gains a `textured` flag plus `uv_scale` (world metres per tile) and `uv_offset`. Untextured layers keep shading as their flat `albedo`, so existing terrains render unchanged.
+
 ## [1.0.0]
 
 Initial release.

@@ -6,8 +6,10 @@ struct TerrainLayer {
     metallic:    f32,
     roughness:   f32,
     height_bias: f32,
+    textured:    f32,
     _pad0:       f32,
-    _pad1:       f32,
+    uv_scale:    vec2<f32>,
+    uv_offset:   vec2<f32>,
 };
 
 struct TerrainObject {
@@ -23,6 +25,8 @@ struct TerrainObject {
 @group(1) @binding(1) var          splatmap_a_tex: texture_2d<f32>;
 @group(1) @binding(2) var          splatmap_b_tex: texture_2d<f32>;
 @group(1) @binding(3) var          splatmap_samp:  sampler;
+@group(1) @binding(4) var          albedo_array:   texture_2d_array<f32>;
+@group(1) @binding(5) var          albedo_samp:    sampler;
 
 struct VsIn {
     @location(0) position: vec3<f32>,
@@ -129,7 +133,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var roughness = 0.0;
     for (var i = 0u; i < 8u; i = i + 1u) {
         let l = obj.layers[i];
-        albedo    = albedo    + l.albedo    * w[i];
+        // Sample every layer unconditionally so the texture fetch stays
+        // in uniform control flow, then pick the textured or flat colour
+        // by the layer's flag. uv_scale is clamped so an untextured
+        // layer (scale 0) cannot produce a non-finite coordinate.
+        let scale     = max(l.uv_scale, vec2<f32>(1e-4, 1e-4));
+        let layer_uv  = in.world_pos.xy / scale + l.uv_offset;
+        let sampled   = textureSample(albedo_array, albedo_samp, layer_uv, i).rgb;
+        let layer_col = mix(l.albedo, sampled, l.textured);
+        albedo    = albedo    + layer_col   * w[i];
         metallic  = metallic  + l.metallic  * w[i];
         roughness = roughness + l.roughness * w[i];
     }

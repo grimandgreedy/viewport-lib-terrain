@@ -45,8 +45,8 @@ const HEIGHT_MAX: f32 = 6.5;
 
 #[derive(Clone)]
 #[allow(dead_code)] // `Idle` is the implicit "no state" rendered when the
-                   // shared slot is None; spelling it out clarifies the
-                   // state machine.
+// shared slot is None; spelling it out clarifies the
+// state machine.
 enum JobUiState {
     Idle,
     Running { started: Instant },
@@ -342,8 +342,7 @@ impl App {
         let camera = Camera {
             center: glam::Vec3::ZERO,
             distance: 90.0,
-            orientation: glam::Quat::from_rotation_z(0.6)
-                * glam::Quat::from_rotation_x(1.05),
+            orientation: glam::Quat::from_rotation_z(0.6) * glam::Quat::from_rotation_x(1.05),
             ..Camera::default()
         };
 
@@ -513,6 +512,7 @@ fn make_layers() -> [TerrainLayer; LAYER_COUNT] {
         metallic: 0.0,
         roughness: 0.85,
         height_bias: 0.0,
+        ..Default::default()
     };
     let mut layers = [neutral; LAYER_COUNT];
     layers[0] = TerrainLayer {
@@ -520,6 +520,7 @@ fn make_layers() -> [TerrainLayer; LAYER_COUNT] {
         metallic: 0.0,
         roughness: 0.90,
         height_bias: 0.0,
+        ..Default::default()
     };
     layers
 }

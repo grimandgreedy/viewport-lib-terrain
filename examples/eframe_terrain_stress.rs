@@ -175,6 +175,7 @@ fn default_layers() -> [TerrainLayer; LAYER_COUNT] {
         metallic: 0.0,
         roughness: 0.90,
         height_bias: 0.0,
+        ..Default::default()
     };
     layers
 }
@@ -289,10 +290,7 @@ impl eframe::App for App {
                 ui.horizontal(|ui| {
                     for choice in ITEM_DIM_CHOICES {
                         let selected = self.pending_item_dim == *choice;
-                        if ui
-                            .selectable_label(selected, format!("{choice}"))
-                            .clicked()
-                        {
+                        if ui.selectable_label(selected, format!("{choice}")).clicked() {
                             self.pending_item_dim = *choice;
                         }
                     }
@@ -306,18 +304,15 @@ impl eframe::App for App {
 
                 ui.label("LOD distance");
                 ui.add(
-                    egui::Slider::new(&mut self.pending_lod_distance, 16.0..=256.0)
-                        .text("metres"),
+                    egui::Slider::new(&mut self.pending_lod_distance, 16.0..=256.0).text("metres"),
                 );
 
                 // Project what hitting Apply would build so the user can see
                 // how much work they are about to ask for.
                 let projected_patches_per_side =
                     ((self.pending_item_dim - 1) / self.pending_patch_cells.max(1)).max(1);
-                let projected_total_patches = self.grid
-                    * self.grid
-                    * projected_patches_per_side
-                    * projected_patches_per_side;
+                let projected_total_patches =
+                    self.grid * self.grid * projected_patches_per_side * projected_patches_per_side;
                 ui.label(format!(
                     "next rebuild: {} items, {} patches",
                     self.grid * self.grid,
@@ -401,10 +396,8 @@ impl eframe::App for App {
                         ctrl: i.modifiers.command,
                     },
                 ));
-                let pointer_in_viewport = i
-                    .pointer
-                    .interact_pos()
-                    .map_or(false, |p| rect.contains(p));
+                let pointer_in_viewport =
+                    i.pointer.interact_pos().map_or(false, |p| rect.contains(p));
                 if let Some(p) = i.pointer.interact_pos() {
                     let local = glam::Vec2::new(p.x - rect.left(), p.y - rect.top());
                     self.cursor_viewport = Some(local);
@@ -437,8 +430,7 @@ impl eframe::App for App {
                                     state: ButtonState::Pressed,
                                 });
                             } else {
-                                if self.drag_in_viewport
-                                    || *button != egui::PointerButton::Primary
+                                if self.drag_in_viewport || *button != egui::PointerButton::Primary
                                 {
                                     self.controller.push_event(ViewportEvent::MouseButton {
                                         button: vp_button,

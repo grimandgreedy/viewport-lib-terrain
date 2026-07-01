@@ -27,9 +27,15 @@ pub struct TerrainLayer {
     pub height_bias: f32,
     /// Whether this layer samples the diffuse texture array.
     pub textured: bool,
-    /// World metres covered by one tile of the diffuse texture, along X
+    /// Whether this layer samples the normal-map array. When false the
+    /// layer uses the flat geometric surface normal.
+    pub normal_mapped: bool,
+    /// Strength of the tangent-space normal perturbation. 1.0 is the
+    /// authored strength; 0.0 flattens it.
+    pub normal_scale: f32,
+    /// World metres covered by one tile of the layer's textures, along X
     /// and Y. Values at or below zero are clamped to keep the tiling
-    /// finite.
+    /// finite. Shared by the diffuse and normal maps.
     pub uv_scale: [f32; 2],
     /// Constant shift added to the tiled coordinate, in tile units.
     pub uv_offset: [f32; 2],
@@ -43,19 +49,23 @@ impl Default for TerrainLayer {
             roughness: 0.9,
             height_bias: 0.0,
             textured: false,
+            normal_mapped: false,
+            normal_scale: 1.0,
             uv_scale: [1.0, 1.0],
             uv_offset: [0.0, 0.0],
         }
     }
 }
 
-/// Diffuse textures for a terrain's surface layers, packed into one
-/// array so every layer samples from a single binding.
+/// A per-layer texture array (diffuse or normal), packed so every layer
+/// samples from a single binding.
 ///
 /// All layers share `dims`; the buffer holds [`LAYER_COUNT`] slots laid
-/// out one after another, RGBA8 in sRGB space. Slots without a source
-/// texture are transparent black and should be paired with a
-/// [`TerrainLayer`] whose `textured` flag is false.
+/// out one after another, RGBA8. Diffuse arrays hold sRGB colour, normal
+/// arrays hold linear tangent-space vectors: the renderer picks the
+/// texture format per binding. Slots without a source are transparent
+/// black and should be paired with a [`TerrainLayer`] whose matching flag
+/// (`textured` / `normal_mapped`) is false.
 ///
 /// `rgba` sits behind an [`Arc`] so per-frame clones of the owning
 /// [`TerrainItem`] do not copy the pixels. Bump [`version`](Self::version)
@@ -227,6 +237,11 @@ pub struct TerrainItem {
     /// layer as its flat `albedo`; `Some` lets layers with `textured`
     /// set sample the array.
     pub layer_textures: Option<LayerTextures>,
+    /// Normal-map textures for the surface layers. `None` uses the flat
+    /// geometric normal; `Some` lets layers with `normal_mapped` set
+    /// perturb the surface. Shares the `uv_scale` / `uv_offset` tiling
+    /// with the diffuse array.
+    pub normal_textures: Option<LayerTextures>,
     /// Two splatmaps. Channels: A.r -> 0, A.g -> 1, ..., B.a -> 7.
     pub splatmaps: [SplatmapData; 2],
     /// Sharpness of the height-blend pass. 0 = pure weight blend.
@@ -249,6 +264,7 @@ impl TerrainItem {
             origin: glam::Vec3::ZERO,
             surface_layers: [TerrainLayer::default(); LAYER_COUNT],
             layer_textures: None,
+            normal_textures: None,
             splatmaps: [SplatmapData::solid_layer0(), SplatmapData::empty()],
             height_blend_strength: 0.0,
             height_blend_noise_scale: 64.0,
@@ -411,6 +427,8 @@ mod tests {
             roughness: 0.4,
             height_bias: 0.7,
             textured: true,
+            normal_mapped: false,
+            normal_scale: 1.0,
             uv_scale: [4.0, 4.0],
             uv_offset: [0.0, 0.0],
         };

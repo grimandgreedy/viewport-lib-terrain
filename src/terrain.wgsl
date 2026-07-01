@@ -2,14 +2,18 @@
 // SHARED_BINDINGS_WGSL, SHARED_PBR_WGSL, and SHARED_MASK_WGSL at runtime.
 
 struct TerrainLayer {
-    albedo:      vec3<f32>,
-    metallic:    f32,
-    roughness:   f32,
-    height_bias: f32,
-    textured:    f32,
-    _pad0:       f32,
-    uv_scale:    vec2<f32>,
-    uv_offset:   vec2<f32>,
+    albedo:        vec3<f32>,
+    metallic:      f32,
+    roughness:     f32,
+    height_bias:   f32,
+    textured:      f32,
+    normal_mapped: f32,
+    uv_scale:      vec2<f32>,
+    uv_offset:     vec2<f32>,
+    normal_scale:  f32,
+    _pad0:         f32,
+    _pad1:         f32,
+    _pad2:         f32,
 };
 
 struct TerrainObject {
@@ -27,6 +31,7 @@ struct TerrainObject {
 @group(1) @binding(3) var          splatmap_samp:  sampler;
 @group(1) @binding(4) var          albedo_array:   texture_2d_array<f32>;
 @group(1) @binding(5) var          albedo_samp:    sampler;
+@group(1) @binding(6) var          normal_array:   texture_2d_array<f32>;
 
 struct VsIn {
     @location(0) position: vec3<f32>,
@@ -78,8 +83,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if !viewport_clip_test(in.world_pos) { discard; }
 
     let view_dir = normalize(camera.eye_pos - in.world_pos);
-    let n_raw    = normalize(in.world_normal);
-    let n_lit    = select(n_raw, -n_raw, dot(n_raw, view_dir) < 0.0);
 
     // Sample both splatmaps into eight per-layer weights.
     let s0 = textureSample(splatmap_a_tex, splatmap_samp, in.uv);
@@ -131,10 +134,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var albedo    = vec3<f32>(0.0);
     var metallic  = 0.0;
     var roughness = 0.0;
+    var ts_normal = vec3<f32>(0.0, 0.0, 0.0);
     for (var i = 0u; i < 8u; i = i + 1u) {
         let l = obj.layers[i];
         // Sample every layer unconditionally so the texture fetch stays
-        // in uniform control flow, then pick the textured or flat colour
+        // in uniform control flow, then pick the textured or flat value
         // by the layer's flag. uv_scale is clamped so an untextured
         // layer (scale 0) cannot produce a non-finite coordinate.
         let scale     = max(l.uv_scale, vec2<f32>(1e-4, 1e-4));
@@ -144,11 +148,31 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         albedo    = albedo    + layer_col   * w[i];
         metallic  = metallic  + l.metallic  * w[i];
         roughness = roughness + l.roughness * w[i];
+
+        // Tangent-space normal: unpack to [-1, 1], scale the XY tilt, and
+        // fall back to flat (0, 0, 1) when the layer has no normal map.
+        // Accumulate the weighted result and normalise once after the
+        // loop, which blends the painted layers without seams.
+        let raw_n  = textureSample(normal_array, albedo_samp, layer_uv, i).xyz * 2.0 - 1.0;
+        let tilted = vec3<f32>(raw_n.xy * l.normal_scale, max(raw_n.z, 1e-3));
+        let n_ts   = mix(vec3<f32>(0.0, 0.0, 1.0), tilted, l.normal_mapped);
+        ts_normal  = ts_normal + n_ts * w[i];
     }
+
+    // Rebuild the world normal from the blended tangent-space normal. The
+    // layer UVs run along world X and Y, so the tangent frame is the
+    // world axes projected onto the surface. A heightfield normal always
+    // has positive Z, so the world-X projection never degenerates.
+    let geo_n    = normalize(in.world_normal);
+    let tangent  = normalize(vec3<f32>(1.0, 0.0, 0.0) - geo_n * geo_n.x);
+    let bitangent = cross(geo_n, tangent);
+    let ts       = normalize(ts_normal);
+    let mapped_n = normalize(tangent * ts.x + bitangent * ts.y + geo_n * ts.z);
+    let shade_n  = select(mapped_n, -mapped_n, dot(mapped_n, view_dir) < 0.0);
 
     var inputs: PbrInputs;
     inputs.world_pos = in.world_pos;
-    inputs.world_n   = n_lit;
+    inputs.world_n   = shade_n;
     inputs.view_dir  = view_dir;
     inputs.albedo    = albedo;
     inputs.metallic  = metallic;

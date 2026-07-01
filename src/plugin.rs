@@ -28,9 +28,11 @@ struct LayerUniform {
     uv_scale: [f32; 2],
     uv_offset: [f32; 2],
     normal_scale: f32,
+    mask_mapped: f32,
     _pad0: f32,
     _pad1: f32,
-    _pad2: f32,
+    mask_remap_min: [f32; 4],
+    mask_remap_max: [f32; 4],
 }
 
 /// Per-object uniform matching `TerrainObject` in `terrain.wgsl`.
@@ -74,6 +76,7 @@ struct BakedTerrain {
     splatmap_b_tex: wgpu::Texture,
     layer_tex: wgpu::Texture,
     normal_tex: wgpu::Texture,
+    mask_tex: wgpu::Texture,
     patches: Vec<BakedPatch>,
     /// Patch grid dimensions in patches. Retained for diagnostics
     /// and future per-patch tooling.
@@ -84,6 +87,7 @@ struct BakedTerrain {
     splat_sig: SplatSig,
     tex_sig: LayerTexSig,
     norm_sig: LayerTexSig,
+    mask_sig: LayerTexSig,
 }
 
 #[derive(Clone, PartialEq)]
@@ -309,6 +313,16 @@ impl ItemTypePlugin for TerrainPlugin {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -472,6 +486,7 @@ impl ItemTypePlugin for TerrainPlugin {
             };
             let tex_sig = LayerTexSig::of(item.layer_textures.as_ref());
             let norm_sig = LayerTexSig::of(item.normal_textures.as_ref());
+            let mask_sig = LayerTexSig::of(item.mask_textures.as_ref());
 
             let needs_mesh_rebake = self.baked.get(&key).is_none_or(|b| b.sig != sig);
             let needs_splat_reupload = self
@@ -480,6 +495,7 @@ impl ItemTypePlugin for TerrainPlugin {
                 .is_none_or(|b| b.splat_sig != splat_sig);
             let needs_tex_reupload = self.baked.get(&key).is_none_or(|b| b.tex_sig != tex_sig);
             let needs_norm_reupload = self.baked.get(&key).is_none_or(|b| b.norm_sig != norm_sig);
+            let needs_mask_reupload = self.baked.get(&key).is_none_or(|b| b.mask_sig != mask_sig);
 
             if needs_mesh_rebake {
                 let (patches, patch_grid) = bake_patches(
@@ -525,6 +541,14 @@ impl ItemTypePlugin for TerrainPlugin {
                     item.normal_textures.as_ref(),
                     &norm_sig.dims,
                 );
+                let mask_tex =
+                    create_layer_array_texture(device, &mask_sig.dims, LayerArrayKind::Mask);
+                upload_layer_array(
+                    queue,
+                    &mask_tex,
+                    item.mask_textures.as_ref(),
+                    &mask_sig.dims,
+                );
                 let object_bg = build_object_bind_group(
                     device,
                     object_bgl,
@@ -535,6 +559,7 @@ impl ItemTypePlugin for TerrainPlugin {
                     &layer_tex,
                     albedo_sampler,
                     &normal_tex,
+                    &mask_tex,
                 );
                 let heights: Vec<f32> = decode_heights(item);
                 self.baked.insert(
@@ -546,6 +571,7 @@ impl ItemTypePlugin for TerrainPlugin {
                         splatmap_b_tex,
                         layer_tex,
                         normal_tex,
+                        mask_tex,
                         patches,
                         patch_grid,
                         cpu: CpuHeightmap {
@@ -558,9 +584,14 @@ impl ItemTypePlugin for TerrainPlugin {
                         splat_sig: splat_sig.clone(),
                         tex_sig: tex_sig.clone(),
                         norm_sig: norm_sig.clone(),
+                        mask_sig: mask_sig.clone(),
                     },
                 );
-            } else if needs_splat_reupload || needs_tex_reupload || needs_norm_reupload {
+            } else if needs_splat_reupload
+                || needs_tex_reupload
+                || needs_norm_reupload
+                || needs_mask_reupload
+            {
                 let entry = self.baked.get_mut(&key).unwrap();
                 let mut rebind = false;
 
@@ -627,6 +658,24 @@ impl ItemTypePlugin for TerrainPlugin {
                     entry.norm_sig = norm_sig;
                 }
 
+                if needs_mask_reupload {
+                    if entry.mask_sig.dims != mask_sig.dims {
+                        entry.mask_tex = create_layer_array_texture(
+                            device,
+                            &mask_sig.dims,
+                            LayerArrayKind::Mask,
+                        );
+                        rebind = true;
+                    }
+                    upload_layer_array(
+                        queue,
+                        &entry.mask_tex,
+                        item.mask_textures.as_ref(),
+                        &mask_sig.dims,
+                    );
+                    entry.mask_sig = mask_sig;
+                }
+
                 if rebind {
                     entry.object_bg = build_object_bind_group(
                         device,
@@ -638,6 +687,7 @@ impl ItemTypePlugin for TerrainPlugin {
                         &entry.layer_tex,
                         albedo_sampler,
                         &entry.normal_tex,
+                        &entry.mask_tex,
                     );
                 }
             }
@@ -790,9 +840,11 @@ fn layer_uniform(layer: &crate::item::TerrainLayer) -> LayerUniform {
         uv_scale: layer.uv_scale,
         uv_offset: layer.uv_offset,
         normal_scale: layer.normal_scale,
+        mask_mapped: if layer.mask_mapped { 1.0 } else { 0.0 },
         _pad0: 0.0,
         _pad1: 0.0,
-        _pad2: 0.0,
+        mask_remap_min: layer.mask_remap_min,
+        mask_remap_max: layer.mask_remap_max,
     }
 }
 
@@ -860,6 +912,7 @@ fn build_object_bind_group(
     layer_tex: &wgpu::Texture,
     albedo_sampler: &wgpu::Sampler,
     normal_tex: &wgpu::Texture,
+    mask_tex: &wgpu::Texture,
 ) -> wgpu::BindGroup {
     let view_a = splatmap_a.create_view(&wgpu::TextureViewDescriptor::default());
     let view_b = splatmap_b.create_view(&wgpu::TextureViewDescriptor::default());
@@ -871,6 +924,7 @@ fn build_object_bind_group(
     };
     let view_layers = array_view(layer_tex);
     let view_normals = array_view(normal_tex);
+    let view_masks = array_view(mask_tex);
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("terrain_object_bg"),
         layout,
@@ -902,6 +956,10 @@ fn build_object_bind_group(
             wgpu::BindGroupEntry {
                 binding: 6,
                 resource: wgpu::BindingResource::TextureView(&view_normals),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: wgpu::BindingResource::TextureView(&view_masks),
             },
         ],
     })
@@ -939,6 +997,7 @@ fn create_splatmap_texture(device: &wgpu::Device, dims: &[u32; 2]) -> wgpu::Text
 enum LayerArrayKind {
     Albedo,
     Normal,
+    Mask,
 }
 
 /// Create a per-layer texture array: one RGBA slice per surface layer at
@@ -951,6 +1010,7 @@ fn create_layer_array_texture(
     let (label, format) = match kind {
         LayerArrayKind::Albedo => ("terrain_layer_array", wgpu::TextureFormat::Rgba8UnormSrgb),
         LayerArrayKind::Normal => ("terrain_normal_array", wgpu::TextureFormat::Rgba8Unorm),
+        LayerArrayKind::Mask => ("terrain_mask_array", wgpu::TextureFormat::Rgba8Unorm),
     };
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
@@ -1067,9 +1127,9 @@ mod tests {
 
     #[test]
     fn layer_uniform_matches_wgsl_size() {
-        // TerrainLayer in terrain.wgsl rounds to 64 bytes under std140.
+        // TerrainLayer in terrain.wgsl rounds to 96 bytes under std140.
         // The Rust mirror must match or the per-layer array misaligns on
         // the GPU.
-        assert_eq!(std::mem::size_of::<LayerUniform>(), 64);
+        assert_eq!(std::mem::size_of::<LayerUniform>(), 96);
     }
 }

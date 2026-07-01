@@ -2,18 +2,20 @@
 // SHARED_BINDINGS_WGSL, SHARED_PBR_WGSL, and SHARED_MASK_WGSL at runtime.
 
 struct TerrainLayer {
-    albedo:        vec3<f32>,
-    metallic:      f32,
-    roughness:     f32,
-    height_bias:   f32,
-    textured:      f32,
-    normal_mapped: f32,
-    uv_scale:      vec2<f32>,
-    uv_offset:     vec2<f32>,
-    normal_scale:  f32,
-    _pad0:         f32,
-    _pad1:         f32,
-    _pad2:         f32,
+    albedo:         vec3<f32>,
+    metallic:       f32,
+    roughness:      f32,
+    height_bias:    f32,
+    textured:       f32,
+    normal_mapped:  f32,
+    uv_scale:       vec2<f32>,
+    uv_offset:      vec2<f32>,
+    normal_scale:   f32,
+    mask_mapped:    f32,
+    _pad0:          f32,
+    _pad1:          f32,
+    mask_remap_min: vec4<f32>,
+    mask_remap_max: vec4<f32>,
 };
 
 struct TerrainObject {
@@ -32,6 +34,7 @@ struct TerrainObject {
 @group(1) @binding(4) var          albedo_array:   texture_2d_array<f32>;
 @group(1) @binding(5) var          albedo_samp:    sampler;
 @group(1) @binding(6) var          normal_array:   texture_2d_array<f32>;
+@group(1) @binding(7) var          mask_array:     texture_2d_array<f32>;
 
 struct VsIn {
     @location(0) position: vec3<f32>,
@@ -134,6 +137,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var albedo    = vec3<f32>(0.0);
     var metallic  = 0.0;
     var roughness = 0.0;
+    var ao        = 0.0;
     var ts_normal = vec3<f32>(0.0, 0.0, 0.0);
     for (var i = 0u; i < 8u; i = i + 1u) {
         let l = obj.layers[i];
@@ -145,9 +149,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let layer_uv  = in.world_pos.xy / scale + l.uv_offset;
         let sampled   = textureSample(albedo_array, albedo_samp, layer_uv, i).rgb;
         let layer_col = mix(l.albedo, sampled, l.textured);
-        albedo    = albedo    + layer_col   * w[i];
-        metallic  = metallic  + l.metallic  * w[i];
-        roughness = roughness + l.roughness * w[i];
+        albedo = albedo + layer_col * w[i];
 
         // Tangent-space normal: unpack to [-1, 1], scale the XY tilt, and
         // fall back to flat (0, 0, 1) when the layer has no normal map.
@@ -157,6 +159,18 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let tilted = vec3<f32>(raw_n.xy * l.normal_scale, max(raw_n.z, 1e-3));
         let n_ts   = mix(vec3<f32>(0.0, 0.0, 1.0), tilted, l.normal_mapped);
         ts_normal  = ts_normal + n_ts * w[i];
+
+        // Mask map: R metallic, G AO, B detail, A smoothness, each remapped
+        // into its authored range. Fall back to the flat scalars (and full
+        // AO) when the layer has no mask.
+        let raw_m    = textureSample(mask_array, albedo_samp, layer_uv, i);
+        let remapped = l.mask_remap_min + raw_m * (l.mask_remap_max - l.mask_remap_min);
+        let m_metal  = mix(l.metallic, remapped.r, l.mask_mapped);
+        let m_ao     = mix(1.0, remapped.g, l.mask_mapped);
+        let m_rough  = mix(l.roughness, 1.0 - remapped.a, l.mask_mapped);
+        metallic  = metallic  + m_metal * w[i];
+        ao        = ao        + m_ao    * w[i];
+        roughness = roughness + m_rough * w[i];
     }
 
     // Rebuild the world normal from the blended tangent-space normal. The
@@ -177,7 +191,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     inputs.albedo    = albedo;
     inputs.metallic  = metallic;
     inputs.roughness = roughness;
-    inputs.ao        = 1.0;
+    inputs.ao        = ao;
     inputs.emissive  = vec3<f32>(0.0);
 
     let lit = viewport_pbr_shade(inputs);

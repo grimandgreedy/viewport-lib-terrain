@@ -33,9 +33,18 @@ pub struct TerrainLayer {
     /// Strength of the tangent-space normal perturbation. 1.0 is the
     /// authored strength; 0.0 flattens it.
     pub normal_scale: f32,
+    /// Whether this layer samples the mask-map array for per-pixel
+    /// metallic, ambient occlusion, and smoothness. When false the layer
+    /// uses its flat `metallic` / `roughness` scalars.
+    pub mask_mapped: bool,
+    /// Per-channel remap minimums applied to the mask sample
+    /// (R metallic, G AO, B detail, A smoothness).
+    pub mask_remap_min: [f32; 4],
+    /// Per-channel remap maximums applied to the mask sample.
+    pub mask_remap_max: [f32; 4],
     /// World metres covered by one tile of the layer's textures, along X
     /// and Y. Values at or below zero are clamped to keep the tiling
-    /// finite. Shared by the diffuse and normal maps.
+    /// finite. Shared by the diffuse, normal, and mask maps.
     pub uv_scale: [f32; 2],
     /// Constant shift added to the tiled coordinate, in tile units.
     pub uv_offset: [f32; 2],
@@ -51,6 +60,9 @@ impl Default for TerrainLayer {
             textured: false,
             normal_mapped: false,
             normal_scale: 1.0,
+            mask_mapped: false,
+            mask_remap_min: [0.0, 0.0, 0.0, 0.0],
+            mask_remap_max: [1.0, 1.0, 1.0, 1.0],
             uv_scale: [1.0, 1.0],
             uv_offset: [0.0, 0.0],
         }
@@ -242,6 +254,11 @@ pub struct TerrainItem {
     /// perturb the surface. Shares the `uv_scale` / `uv_offset` tiling
     /// with the diffuse array.
     pub normal_textures: Option<LayerTextures>,
+    /// Mask-map textures for the surface layers (R metallic, G AO,
+    /// B detail, A smoothness). `None` uses the flat per-layer scalars;
+    /// `Some` lets layers with `mask_mapped` set drive metallic / AO /
+    /// smoothness per pixel. Shares the diffuse array's tiling.
+    pub mask_textures: Option<LayerTextures>,
     /// Two splatmaps. Channels: A.r -> 0, A.g -> 1, ..., B.a -> 7.
     pub splatmaps: [SplatmapData; 2],
     /// Sharpness of the height-blend pass. 0 = pure weight blend.
@@ -265,6 +282,7 @@ impl TerrainItem {
             surface_layers: [TerrainLayer::default(); LAYER_COUNT],
             layer_textures: None,
             normal_textures: None,
+            mask_textures: None,
             splatmaps: [SplatmapData::solid_layer0(), SplatmapData::empty()],
             height_blend_strength: 0.0,
             height_blend_noise_scale: 64.0,
@@ -429,6 +447,9 @@ mod tests {
             textured: true,
             normal_mapped: false,
             normal_scale: 1.0,
+            mask_mapped: false,
+            mask_remap_min: [0.0, 0.0, 0.0, 0.0],
+            mask_remap_max: [1.0, 1.0, 1.0, 1.0],
             uv_scale: [4.0, 4.0],
             uv_offset: [0.0, 0.0],
         };

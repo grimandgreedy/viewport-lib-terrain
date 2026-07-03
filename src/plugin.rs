@@ -816,8 +816,8 @@ impl ItemTypePlugin for TerrainPlugin {
         }
     }
 
-    fn pick(&self, ray: &PickRay) -> Option<(f32, viewport_lib::interaction::picking::PickHit)> {
-        let mut best: Option<(f32, viewport_lib::interaction::picking::PickHit)> = None;
+    fn pick(&self, ray: &PickRay) -> Option<(f32, viewport_lib::picking::PickHit)> {
+        let mut best: Option<(f32, viewport_lib::picking::PickHit)> = None;
         for (pick_id, baked) in self.baked.iter() {
             if let Some((t, hit)) = pick::pick_heightmap(ray, &baked.cpu, *pick_id) {
                 if best.as_ref().is_none_or(|(bt, _)| t < *bt) {

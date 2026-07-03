@@ -17,7 +17,7 @@
 //! [`DetailScatterParams::camera_xy`]; samples outside the footprint
 //! are skipped without per-sample work.
 
-use viewport_lib::{MeshInstanceItem, SpriteBlend, SpriteItem, SpriteSizeMode};
+use viewport_lib::{MeshId, MeshInstanceItem, SpriteBlend, SpriteItem, SpriteSizeMode};
 
 use crate::TerrainItem;
 
@@ -34,7 +34,7 @@ pub enum DetailKind {
     },
     /// Instanced mesh. One [`MeshInstanceItem`] per layer.
     Mesh {
-        mesh_id: u64,
+        mesh_id: MeshId,
         texture_id: Option<u64>,
         colour: [f32; 4],
     },
@@ -42,7 +42,7 @@ pub enum DetailKind {
     /// camera-facing impostor billboard beyond. One mesh batch + one
     /// sprite batch per layer.
     TreeLod {
-        mesh_id: u64,
+        mesh_id: MeshId,
         mesh_texture_id: Option<u64>,
         impostor_texture_id: Option<u64>,
         colour: [f32; 4],
@@ -297,7 +297,7 @@ pub fn scatter_terrain_details(
             s.blend = SpriteBlend::AlphaBlend;
             s
         };
-        let make_mesh = |mesh_id: u64,
+        let make_mesh = |mesh_id: MeshId,
                          tex: Option<u64>,
                          transforms: Vec<[[f32; 4]; 4]>,
                          colours: Vec<[f32; 4]>|

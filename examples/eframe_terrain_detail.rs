@@ -16,7 +16,7 @@
 
 use eframe::egui;
 use viewport_lib::{
-    ButtonState, Camera, CameraFrame, FrameData, ItemSettings, LightingSettings,
+    ButtonState, Camera, CameraFrame, FrameData, ItemSettings, LightingSettings, MeshId,
     OrbitCameraController, PickId, SceneFrame, ScrollUnits, ViewportContext, ViewportEvent,
     ViewportRenderer, primitives,
 };
@@ -63,8 +63,7 @@ fn main() -> eframe::Result {
             let tree_id = renderer
                 .resources_mut()
                 .upload_mesh_data(device, &tree_mesh)
-                .expect("upload tree mesh")
-                .index() as u64;
+                .expect("upload tree mesh");
 
             rs.renderer.write().callback_resources.insert(renderer);
             Ok(Box::new(App::new(tree_id)))
@@ -92,13 +91,13 @@ struct App {
     last_forward: glam::Vec3,
     last_distance: f32,
     drag_in_viewport: bool,
-    tree_mesh_id: u64,
+    tree_mesh_id: MeshId,
     detail_out: DetailScatterOutput,
     ui: DetailUi,
 }
 
 impl App {
-    fn new(tree_mesh_id: u64) -> Self {
+    fn new(tree_mesh_id: MeshId) -> Self {
         let dim = TERRAIN_DIM as usize;
         let heightmap = build_heightmap(dim);
         let splatmap_dim = SPLATMAP_DIM as usize;

@@ -423,7 +423,9 @@ impl ItemTypePlugin for TerrainPlugin {
             ..Default::default()
         });
 
-        // Diffuse layers tile across the surface, so this sampler wraps.
+        // Diffuse, normal, and mask layers tile across the surface, so
+        // this sampler wraps and filters trilinearly. Anisotropy keeps
+        // the tiling sharp at grazing angles instead of smearing.
         let albedo_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("terrain_albedo_sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
@@ -432,6 +434,7 @@ impl ItemTypePlugin for TerrainPlugin {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Linear,
+            anisotropy_clamp: 8,
             ..Default::default()
         });
 
@@ -1000,8 +1003,16 @@ enum LayerArrayKind {
     Mask,
 }
 
+/// Number of mip levels for a texture of the given size: a full chain
+/// down to 1x1. Without this the tiling detail textures alias into
+/// salt-and-pepper noise at a distance.
+fn mip_count(w: u32, h: u32) -> u32 {
+    32 - w.max(h).max(1).leading_zeros()
+}
+
 /// Create a per-layer texture array: one RGBA slice per surface layer at
-/// `dims`. Diffuse arrays are sRGB, normal arrays are linear.
+/// `dims`, with a full mip chain. Diffuse arrays are sRGB, normal and
+/// mask arrays are linear.
 fn create_layer_array_texture(
     device: &wgpu::Device,
     dims: &[u32; 2],
@@ -1012,14 +1023,16 @@ fn create_layer_array_texture(
         LayerArrayKind::Normal => ("terrain_normal_array", wgpu::TextureFormat::Rgba8Unorm),
         LayerArrayKind::Mask => ("terrain_mask_array", wgpu::TextureFormat::Rgba8Unorm),
     };
+    let w = dims[0].max(1);
+    let h = dims[1].max(1);
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
         size: wgpu::Extent3d {
-            width: dims[0].max(1),
-            height: dims[1].max(1),
+            width: w,
+            height: h,
             depth_or_array_layers: crate::item::LAYER_COUNT as u32,
         },
-        mip_level_count: 1,
+        mip_level_count: mip_count(w, h),
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
@@ -1028,10 +1041,36 @@ fn create_layer_array_texture(
     })
 }
 
-/// Upload the packed layer array. With no textures present the array is
-/// a 1x1 placeholder left at its cleared (zero) contents; every layer
-/// falls back to its flat albedo in the shader, so nothing needs
-/// writing.
+/// Box-downsample an RGBA image to half size (rounding down, minimum 1).
+fn downsample_half(src: &[u8], w: u32, h: u32) -> (Vec<u8>, u32, u32) {
+    let dw = (w / 2).max(1);
+    let dh = (h / 2).max(1);
+    let (w, h) = (w as usize, h as usize);
+    let mut out = vec![0u8; (dw * dh * 4) as usize];
+    for y in 0..dh as usize {
+        for x in 0..dw as usize {
+            let sx0 = (x * 2).min(w - 1);
+            let sy0 = (y * 2).min(h - 1);
+            let sx1 = (sx0 + 1).min(w - 1);
+            let sy1 = (sy0 + 1).min(h - 1);
+            let o = (y * dw as usize + x) * 4;
+            for c in 0..4 {
+                let sum = src[(sy0 * w + sx0) * 4 + c] as u32
+                    + src[(sy0 * w + sx1) * 4 + c] as u32
+                    + src[(sy1 * w + sx0) * 4 + c] as u32
+                    + src[(sy1 * w + sx1) * 4 + c] as u32;
+                out[o + c] = (sum / 4) as u8;
+            }
+        }
+    }
+    (out, dw, dh)
+}
+
+/// Upload the packed layer array, generating a mip chain per layer so
+/// the tiling textures filter cleanly at a distance. With no textures
+/// present the array is a 1x1 placeholder left at its cleared (zero)
+/// contents; every layer falls back to its flat value in the shader, so
+/// nothing needs writing.
 fn upload_layer_array(
     queue: &wgpu::Queue,
     tex: &wgpu::Texture,
@@ -1043,30 +1082,50 @@ fn upload_layer_array(
     };
     let w = dims[0].max(1);
     let h = dims[1].max(1);
-    let expected = (w as usize) * (h as usize) * 4 * crate::item::LAYER_COUNT;
+    let slot_len = (w as usize) * (h as usize) * 4;
     let rgba = textures.rgba();
-    if rgba.len() != expected {
+    if rgba.len() != slot_len * crate::item::LAYER_COUNT {
         return;
     }
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: tex,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        rgba,
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(w * 4),
-            rows_per_image: Some(h),
-        },
-        wgpu::Extent3d {
-            width: w,
-            height: h,
-            depth_or_array_layers: crate::item::LAYER_COUNT as u32,
-        },
-    );
+    let levels = mip_count(w, h);
+    for layer in 0..crate::item::LAYER_COUNT {
+        // Level 0 is the source slice; each further level halves the
+        // previous one.
+        let mut level_data = rgba[layer * slot_len..(layer + 1) * slot_len].to_vec();
+        let mut lw = w;
+        let mut lh = h;
+        for level in 0..levels {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex,
+                    mip_level: level,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: layer as u32,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &level_data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(lw * 4),
+                    rows_per_image: Some(lh),
+                },
+                wgpu::Extent3d {
+                    width: lw,
+                    height: lh,
+                    depth_or_array_layers: 1,
+                },
+            );
+            if level + 1 < levels {
+                let (next, nw, nh) = downsample_half(&level_data, lw, lh);
+                level_data = next;
+                lw = nw;
+                lh = nh;
+            }
+        }
+    }
 }
 
 fn upload_splatmap(queue: &wgpu::Queue, tex: &wgpu::Texture, rgba: &[u8], dims: &[u32; 2]) {
@@ -1123,6 +1182,24 @@ mod tests {
         validator
             .validate(&module)
             .unwrap_or_else(|e| panic!("terrain shader failed to validate: {e}"));
+    }
+
+    #[test]
+    fn mip_count_covers_full_chain() {
+        assert_eq!(mip_count(1, 1), 1);
+        assert_eq!(mip_count(1024, 1024), 11);
+        assert_eq!(mip_count(1024, 512), 11);
+        assert_eq!(mip_count(512, 512), 10);
+    }
+
+    #[test]
+    fn downsample_half_averages_and_halves() {
+        // 2x2 image, one white pixel and three black: the single
+        // downsampled pixel is the average (255/4 rounded down = 63).
+        let src = vec![255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let (out, w, h) = downsample_half(&src, 2, 2);
+        assert_eq!((w, h), (1, 1));
+        assert_eq!(out, vec![63, 63, 63, 63]);
     }
 
     #[test]

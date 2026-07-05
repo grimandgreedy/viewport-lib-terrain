@@ -17,7 +17,7 @@
 //! [`DetailScatterParams::camera_xy`]; samples outside the footprint
 //! are skipped without per-sample work.
 
-use viewport_lib::{MeshId, MeshInstanceItem, SpriteBlend, SpriteItem, SpriteSizeMode};
+use viewport_lib::{MeshId, MeshInstanceItem, SpriteBlend, SpriteItem, SpriteSizeMode, TextureId};
 
 use crate::TerrainItem;
 
@@ -28,14 +28,14 @@ pub enum DetailKind {
     Billboard {
         /// Optional texture handle from `ViewportGpuResources::upload_texture`.
         /// `None` renders a solid-coloured quad.
-        texture_id: Option<u64>,
+        texture_id: Option<TextureId>,
         /// RGBA tint applied to every instance.
         colour: [f32; 4],
     },
     /// Instanced mesh. One [`MeshInstanceItem`] per layer.
     Mesh {
         mesh_id: MeshId,
-        texture_id: Option<u64>,
+        texture_id: Option<TextureId>,
         colour: [f32; 4],
     },
     /// Tree-style LOD: full mesh under [`TreeLod::switch_distance`],
@@ -43,8 +43,8 @@ pub enum DetailKind {
     /// sprite batch per layer.
     TreeLod {
         mesh_id: MeshId,
-        mesh_texture_id: Option<u64>,
-        impostor_texture_id: Option<u64>,
+        mesh_texture_id: Option<TextureId>,
+        impostor_texture_id: Option<TextureId>,
         colour: [f32; 4],
         /// Distance from camera at which the renderer switches the
         /// individual tree from mesh to impostor.
@@ -281,7 +281,7 @@ pub fn scatter_terrain_details(
             let _ = r_max_sq;
         }
 
-        let make_sprite = |tex: Option<u64>,
+        let make_sprite = |tex: Option<TextureId>,
                            colour: [f32; 4],
                            positions: Vec<[f32; 3]>,
                            sizes: Vec<f32>|
@@ -298,7 +298,7 @@ pub fn scatter_terrain_details(
             s
         };
         let make_mesh = |mesh_id: MeshId,
-                         tex: Option<u64>,
+                         tex: Option<TextureId>,
                          transforms: Vec<[[f32; 4]; 4]>,
                          colours: Vec<[f32; 4]>|
          -> MeshInstanceItem {

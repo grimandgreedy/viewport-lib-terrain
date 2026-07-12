@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.0]
+
+### Added
+
+- Terrain answers GPU object picking. `TerrainPlugin` renders its pick ids into viewport-lib's pick pass, so `pick_object(PickBackend::Gpu, ...)` returns terrain items without a CPU heightmap ray-cast. The CPU `pick` path is unchanged and remains the way to get an on-surface hit position.
+
 ## [1.1.0]
 
 ### Added

@@ -4,11 +4,14 @@ use std::collections::HashMap;
 
 use bytemuck::{Pod, Zeroable};
 use viewport_lib::plugin_api::{
-    ItemFrameContext, ItemTypePlugin, OutlineMaskContext, PaintContext, PickRay,
+    ItemFrameContext, ItemTypePlugin, OutlineMaskContext, PaintContext, PickPassContext, PickRay,
     PluginItemCollection, SharedBindings, shared_wgsl,
 };
 use viewport_lib::renderer::PickId;
-use viewport_lib::resources::{HDR_COLOR_FORMAT, MASK_COLOR_FORMAT, SCENE_DEPTH_FORMAT};
+use viewport_lib::resources::{
+    HDR_COLOR_FORMAT, MASK_COLOR_FORMAT, PICK_COLOR_FORMAT, PICK_DEPTH_CHANNEL_FORMAT,
+    SCENE_DEPTH_FORMAT,
+};
 use wgpu::util::DeviceExt;
 
 use crate::item::TerrainCollection;
@@ -43,7 +46,9 @@ struct ObjectUniform {
     layers: [LayerUniform; 8],
     height_blend_strength: f32,
     height_blend_noise_scale: f32,
-    _pad0: f32,
+    /// Item pick id, read by the `vs_pick` stage so terrain draws into the GPU
+    /// pick pass.
+    pick_id: u32,
     _pad1: f32,
 }
 
@@ -150,6 +155,7 @@ pub struct TerrainPlugin {
     object_bgl: Option<wgpu::BindGroupLayout>,
     opaque_pipeline: Option<wgpu::RenderPipeline>,
     mask_pipeline: Option<wgpu::RenderPipeline>,
+    pick_pipeline: Option<wgpu::RenderPipeline>,
     splatmap_sampler: Option<wgpu::Sampler>,
     albedo_sampler: Option<wgpu::Sampler>,
     baked: HashMap<PickId, BakedTerrain>,
@@ -174,6 +180,7 @@ impl Default for TerrainPlugin {
             object_bgl: None,
             opaque_pipeline: None,
             mask_pipeline: None,
+            pick_pipeline: None,
             splatmap_sampler: None,
             albedo_sampler: None,
             baked: HashMap::new(),
@@ -232,6 +239,8 @@ fn build_shader_source() -> String {
     s.push_str(shared_wgsl::SHARED_PBR_WGSL);
     s.push('\n');
     s.push_str(shared_wgsl::SHARED_MASK_WGSL);
+    s.push('\n');
+    s.push_str(shared_wgsl::SHARED_PICK_WGSL);
     s.push('\n');
     s.push_str(include_str!("terrain.wgsl"));
     s
@@ -412,6 +421,55 @@ impl ItemTypePlugin for TerrainPlugin {
             cache: None,
         });
 
+        // Pick pipeline: matches the lib's three-target pick pass (object id,
+        // primitive id, depth) plus the scene depth-stencil. vs_pick forwards
+        // the object pick id; viewport_pick_fs (from SHARED_PICK_WGSL) writes it.
+        let pick_color = |format| {
+            Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })
+        };
+        let pick_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("terrain_pick_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_pick"),
+                buffers: std::slice::from_ref(&vbuf_layout),
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("viewport_pick_fs"),
+                targets: &[
+                    pick_color(PICK_COLOR_FORMAT),
+                    pick_color(PICK_COLOR_FORMAT),
+                    pick_color(PICK_DEPTH_CHANNEL_FORMAT),
+                ],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: SCENE_DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                ..Default::default()
+            },
+            multiview: None,
+            cache: None,
+        });
+
         let splatmap_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("terrain_splatmap_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -441,6 +499,7 @@ impl ItemTypePlugin for TerrainPlugin {
         self.object_bgl = Some(object_bgl);
         self.opaque_pipeline = Some(opaque_pipeline);
         self.mask_pipeline = Some(mask_pipeline);
+        self.pick_pipeline = Some(pick_pipeline);
         self.splatmap_sampler = Some(splatmap_sampler);
         self.albedo_sampler = Some(albedo_sampler);
     }
@@ -701,7 +760,7 @@ impl ItemTypePlugin for TerrainPlugin {
                 layers: std::array::from_fn(|i| layer_uniform(&item.surface_layers[i])),
                 height_blend_strength: item.height_blend_strength,
                 height_blend_noise_scale: item.height_blend_noise_scale,
-                _pad0: 0.0,
+                pick_id: key.0 as u32,
                 _pad1: 0.0,
             };
             queue.write_buffer(&baked.uniform_buf, 0, bytemuck::bytes_of(&uniform));
@@ -805,6 +864,47 @@ impl ItemTypePlugin for TerrainPlugin {
                 pass.set_pipeline(pipeline);
                 bound = true;
             }
+            pass.set_bind_group(1, &baked.object_bg, &[]);
+            for patch in &baked.patches {
+                if !patch.visible {
+                    continue;
+                }
+                let lod = (patch.chosen_lod as usize).min(patch.lods.len() - 1);
+                let mesh = &patch.lods[lod];
+                pass.set_vertex_buffer(0, mesh.vbuf.slice(..));
+                pass.set_index_buffer(mesh.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+            }
+        }
+    }
+
+    fn render_pick<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        _ctx: &PickPassContext<'a>,
+        items: &'a dyn PluginItemCollection,
+    ) {
+        let Some(coll) = items.as_any().downcast_ref::<TerrainCollection>() else {
+            return;
+        };
+        let Some(pipeline) = self.pick_pipeline.as_ref() else {
+            return;
+        };
+        let mut bound = false;
+        for item in &coll.items {
+            if item.settings.hidden || item.settings.pick_id == PickId::NONE {
+                continue;
+            }
+            let key = item.settings.pick_id;
+            let Some(baked) = self.baked.get(&key) else {
+                continue;
+            };
+            if !bound {
+                pass.set_pipeline(pipeline);
+                bound = true;
+            }
+            // Group 0 (camera) is bound by the lib; group 1 carries the object
+            // uniform, whose pick_id vs_pick forwards.
             pass.set_bind_group(1, &baked.object_bg, &[]);
             for patch in &baked.patches {
                 if !patch.visible {

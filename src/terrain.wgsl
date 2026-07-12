@@ -23,7 +23,7 @@ struct TerrainObject {
     layers:                    array<TerrainLayer, 8>,
     height_blend_strength:     f32,
     height_blend_noise_scale:  f32,
-    _pad0:                     f32,
+    pick_id:                   u32,
     _pad1:                     f32,
 };
 
@@ -204,4 +204,20 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 fn vs_mask(in: VsIn) -> @builtin(position) vec4<f32> {
     let world = obj.model * vec4<f32>(in.position, 1.0);
     return camera.view_proj * world;
+}
+
+// Pick vertex stage. Forwards the object pick id flat; the fragment is
+// viewport_pick_fs from SHARED_PICK_WGSL, which writes the three pick channels.
+struct PickVsOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) @interpolate(flat) pick_id: u32,
+};
+
+@vertex
+fn vs_pick(in: VsIn) -> PickVsOut {
+    let world = obj.model * vec4<f32>(in.position, 1.0);
+    var out: PickVsOut;
+    out.clip_pos = camera.view_proj * world;
+    out.pick_id = obj.pick_id;
+    return out;
 }

@@ -4,7 +4,7 @@
 //! tests the ray against the two triangles of each cell using
 //! ray-triangle intersection. Returns the first hit along the ray.
 
-use viewport_lib::picking::PickHit;
+use viewport_lib::PickHit;
 use viewport_lib::plugin_api::PickRay;
 use viewport_lib::renderer::PickId;
 

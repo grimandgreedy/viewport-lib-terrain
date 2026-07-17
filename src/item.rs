@@ -7,6 +7,8 @@ use viewport_lib::ItemSettings;
 use viewport_lib::plugin_api::PluginItemCollection;
 use viewport_lib::renderer::PickId;
 
+use crate::heightfield::TerrainHeightfield;
+
 /// Number of surface layers in a [`TerrainItem`]. Two splatmaps carry
 /// four channels each; channels map to layers in order.
 pub const LAYER_COUNT: usize = 8;
@@ -340,6 +342,91 @@ impl TerrainItem {
             *slot = *src;
         }
         self.surface_layers = layers;
+    }
+
+    /// Bilinear-filtered world-space height at `(x, y)`.
+    ///
+    /// Treats the heightmap as a uniform grid stretched across
+    /// [`world_size`](Self::world_size) from [`origin`](Self::origin) (lower-left
+    /// in `xy`) and remaps samples through [`height_range`](Self::height_range).
+    /// Points outside the footprint clamp to the nearest edge — the same value
+    /// the renderer shows there. Cheap enough to call per query for physics,
+    /// camera, navigation, or foliage placement.
+    pub fn height_at(&self, x: f32, y: f32) -> f32 {
+        let cols = self.dims[0].max(1) as i32;
+        let rows = self.dims[1].max(1) as i32;
+        let u = ((x - self.origin.x) / self.world_size[0]).clamp(0.0, 1.0);
+        let v = ((y - self.origin.y) / self.world_size[1]).clamp(0.0, 1.0);
+        let fx = u * (cols - 1) as f32;
+        let fy = v * (rows - 1) as f32;
+        let x0 = fx.floor() as i32;
+        let y0 = fy.floor() as i32;
+        let x1 = (x0 + 1).min(cols - 1);
+        let y1 = (y0 + 1).min(rows - 1);
+        let tx = fx - x0 as f32;
+        let ty = fy - y0 as f32;
+        let span = self.height_range[1] - self.height_range[0];
+        let sample = |sx: i32, sy: i32| -> f32 {
+            let raw = self.heightmap[(sy * cols + sx) as usize] as f32 / u16::MAX as f32;
+            self.height_range[0] + raw * span
+        };
+        let h00 = sample(x0, y0);
+        let h10 = sample(x1, y0);
+        let h01 = sample(x0, y1);
+        let h11 = sample(x1, y1);
+        let h0 = h00 * (1.0 - tx) + h10 * tx;
+        let h1 = h01 * (1.0 - tx) + h11 * tx;
+        h0 * (1.0 - ty) + h1 * ty
+    }
+
+    /// World-space surface normal at `(x, y)`, from finite differences over the
+    /// heightmap. `z`-up convention; the returned vector is normalised.
+    pub fn normal_at(&self, x: f32, y: f32) -> glam::Vec3 {
+        let cols = self.dims[0].max(2) as f32;
+        let rows = self.dims[1].max(2) as f32;
+        let dx = self.world_size[0] / (cols - 1.0);
+        let dy = self.world_size[1] / (rows - 1.0);
+        let hl = self.height_at(x - dx, y);
+        let hr = self.height_at(x + dx, y);
+        let hd = self.height_at(x, y - dy);
+        let hu = self.height_at(x, y + dy);
+        let dzdx = (hr - hl) / (2.0 * dx);
+        let dzdy = (hu - hd) / (2.0 * dy);
+        glam::Vec3::new(-dzdx, -dzdy, 1.0).normalize()
+    }
+
+    /// Derive a physics-ready [`TerrainHeightfield`] from this item's heightmap.
+    ///
+    /// The height samples come from [`heightmap`](Self::heightmap), so the
+    /// collider is always consistent with the rendered surface — there is no
+    /// second copy to keep in sync. See [`TerrainHeightfield`] for the buffer
+    /// layout and body-placement conventions. Register the result at
+    /// [`body_translation`](TerrainHeightfield::body_translation) with
+    /// [`body_rotation`](TerrainHeightfield::body_rotation).
+    pub fn heightfield(&self) -> TerrainHeightfield {
+        let cols = self.dims[0] as usize;
+        let rows = self.dims[1] as usize;
+        let mut heights = vec![0.0f32; rows * cols];
+        for j in 0..cols {
+            for i in 0..rows {
+                // Reverse rows so source row 0 (world min-y) lands at the grid
+                // row that the body rotation maps back to world min-y, and pack
+                // column-major (`i + j * rows`).
+                let src_row = rows - 1 - i;
+                let raw = self.heightmap[src_row * cols + j] as f32 / u16::MAX as f32;
+                heights[i + j * rows] = raw;
+            }
+        }
+        let span = self.height_range[1] - self.height_range[0];
+        TerrainHeightfield {
+            rows: self.dims[1],
+            cols: self.dims[0],
+            heights,
+            scale: glam::Vec3::new(self.world_size[0], span, self.world_size[1]),
+            world_extent: glam::Vec2::new(self.world_size[0], self.world_size[1]),
+            origin: self.origin,
+            height_min: self.height_range[0],
+        }
     }
 }
 

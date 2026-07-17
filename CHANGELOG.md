@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0]
+
+### Added
+
+- World-space height and surface-normal queries on `TerrainItem`. `height_at(x, y)` returns the bilinear-filtered terrain height and `normal_at(x, y)` the finite-difference surface normal, both in world space with points outside the footprint clamping to the nearest edge. These read the same `u16` heightmap the renderer draws, so gameplay, camera, navigation, and foliage-placement code can sample the surface without keeping a separate copy or casting a pick ray.
+- Physics-ready heightfield export. `TerrainItem::heightfield()` derives a `TerrainHeightfield` — a physics-engine-neutral, centred height grid plus the world-space `body_translation()` / `body_rotation()` that place it under the rendered surface — directly from the item's heightmap. A collision backend can register it as a static collider so characters walk on exactly the surface being drawn, with no second heightmap loaded or synthesised. The sample buffer is emitted in the centred, column-major, row-reversed layout that heightfield colliders expect, so the "thin spot" fall-through that a naive row-major buffer causes is handled once, here.
+
 ## [1.2.0]
 
 ### Added

@@ -24,6 +24,7 @@
 //! See `examples/eframe_terrain.rs` for a runnable demo.
 
 mod detail;
+mod heightfield;
 mod item;
 mod mesh;
 mod pick;
@@ -32,6 +33,7 @@ mod plugin;
 pub use detail::{
     DetailKind, DetailLayer, DetailScatterOutput, DetailScatterParams, scatter_terrain_details,
 };
+pub use heightfield::TerrainHeightfield;
 pub use item::{
     LAYER_COUNT, LayerTextures, SplatmapData, TerrainCollection, TerrainItem, TerrainLayer,
 };

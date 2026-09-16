@@ -804,11 +804,11 @@ impl ItemTypePlugin for TerrainPlugin {
         }
     }
 
-    fn paint<'a>(
-        &'a self,
-        pass: &mut wgpu::RenderPass<'a>,
-        _ctx: &PaintContext<'a>,
-        items: &'a dyn PluginItemCollection,
+    fn paint(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        _ctx: &PaintContext<'_>,
+        items: &dyn PluginItemCollection,
     ) {
         let Some(coll) = items.as_any().downcast_ref::<TerrainCollection>() else {
             return;
@@ -839,11 +839,11 @@ impl ItemTypePlugin for TerrainPlugin {
         }
     }
 
-    fn outline_mask<'a>(
-        &'a self,
-        pass: &mut wgpu::RenderPass<'a>,
-        _ctx: &OutlineMaskContext<'a>,
-        items: &'a dyn PluginItemCollection,
+    fn outline_mask(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        _ctx: &OutlineMaskContext<'_>,
+        items: &dyn PluginItemCollection,
     ) {
         let Some(coll) = items.as_any().downcast_ref::<TerrainCollection>() else {
             return;
@@ -878,11 +878,11 @@ impl ItemTypePlugin for TerrainPlugin {
         }
     }
 
-    fn render_pick<'a>(
-        &'a self,
-        pass: &mut wgpu::RenderPass<'a>,
-        _ctx: &PickPassContext<'a>,
-        items: &'a dyn PluginItemCollection,
+    fn render_pick(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        _ctx: &PickPassContext<'_>,
+        items: &dyn PluginItemCollection,
     ) {
         let Some(coll) = items.as_any().downcast_ref::<TerrainCollection>() else {
             return;
@@ -919,7 +919,11 @@ impl ItemTypePlugin for TerrainPlugin {
         }
     }
 
-    fn pick(&self, ray: &PickRay) -> Option<(f32, viewport_lib::PickHit)> {
+    fn pick(
+        &self,
+        ray: &PickRay,
+        _ctx: &viewport_lib::plugin_api::PickContext,
+    ) -> Option<(f32, viewport_lib::PickHit)> {
         let mut best: Option<(f32, viewport_lib::PickHit)> = None;
         for (pick_id, baked) in self.baked.iter() {
             if let Some((t, hit)) = pick::pick_heightmap(ray, &baked.cpu, *pick_id) {

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use bytemuck::{Pod, Zeroable};
 use viewport_lib::plugin_api::{
     ItemFrameContext, ItemTypePlugin, OutlineMaskContext, PaintContext, PickPassContext, PickRay,
-    PluginItemCollection, SharedBindings, shared_wgsl,
+    PluginItemCollection, RectPickContext, SharedBindings, pick_helpers, shared_wgsl,
 };
 use viewport_lib::renderer::PickId;
 use viewport_lib::resources::{
@@ -143,6 +143,34 @@ impl LayerTexSig {
     }
 }
 
+/// Key for one item's baked terrain.
+///
+/// `PickId` alone will not do: [`PickId::NONE`] is `0` and is the default for
+/// every item, so every terrain that opts out of picking would collapse onto
+/// one entry and the two would rebake over each other every frame. The second
+/// field counts how many earlier items this frame carry the same pick id, which
+/// keeps a uniquely-identified terrain on a stable key regardless of submission
+/// order and still gives duplicates and unpickable items a slot each.
+type BakeKey = (PickId, u32);
+
+/// The per-item keys for one frame's collection, in submission order.
+///
+/// Every hook that walks the collection derives its keys through this, so they
+/// agree with the ones `prepare` baked under.
+fn bake_keys(items: &[crate::item::TerrainItem]) -> Vec<BakeKey> {
+    let mut seen: HashMap<PickId, u32> = HashMap::new();
+    items
+        .iter()
+        .map(|item| {
+            let id = item.settings.pick_id;
+            let occurrence = seen.entry(id).or_insert(0);
+            let key = (id, *occurrence);
+            *occurrence += 1;
+            key
+        })
+        .collect()
+}
+
 /// Heightmap retained for CPU picking.
 pub(crate) struct CpuHeightmap {
     pub heights: Vec<f32>,
@@ -158,7 +186,7 @@ pub struct TerrainPlugin {
     pick_pipeline: Option<wgpu::RenderPipeline>,
     splatmap_sampler: Option<wgpu::Sampler>,
     albedo_sampler: Option<wgpu::Sampler>,
-    baked: HashMap<PickId, BakedTerrain>,
+    baked: HashMap<BakeKey, BakedTerrain>,
     sample_count: u32,
     /// Patch size in heightmap cells per side at LOD 0. Default 32.
     patch_cells: u32,
@@ -523,11 +551,8 @@ impl ItemTypePlugin for TerrainPlugin {
         let Some(albedo_sampler) = self.albedo_sampler.as_ref() else {
             return Vec::new();
         };
-        let mut seen: Vec<PickId> = Vec::with_capacity(coll.items.len());
-        for item in &coll.items {
-            let key = item.settings.pick_id;
-            seen.push(key);
-
+        let keys = bake_keys(&coll.items);
+        for (item, &key) in coll.items.iter().zip(keys.iter()) {
             let sig = BakeSig {
                 dims: item.dims,
                 world_size: item.world_size,
@@ -760,13 +785,13 @@ impl ItemTypePlugin for TerrainPlugin {
                 layers: std::array::from_fn(|i| layer_uniform(&item.surface_layers[i])),
                 height_blend_strength: item.height_blend_strength,
                 height_blend_noise_scale: item.height_blend_noise_scale,
-                pick_id: key.0 as u32,
+                pick_id: key.0.0 as u32,
                 _pad1: 0.0,
             };
             queue.write_buffer(&baked.uniform_buf, 0, bytemuck::bytes_of(&uniform));
         }
 
-        self.baked.retain(|k, _| seen.contains(k));
+        self.baked.retain(|k, _| keys.contains(k));
 
         Vec::new()
     }
@@ -783,8 +808,9 @@ impl ItemTypePlugin for TerrainPlugin {
         let lod_distance = self.lod_distance.max(1.0);
         let max_lod = self.max_lod.saturating_sub(1);
         let eye = glam::Vec3::from(ctx.camera.eye_position);
-        for item in &coll.items {
-            let key = item.settings.pick_id;
+        let keys = bake_keys(&coll.items);
+        for (item, &key) in coll.items.iter().zip(keys.iter()) {
+            let _ = item;
             let Some(baked) = self.baked.get_mut(&key) else {
                 continue;
             };
@@ -817,11 +843,11 @@ impl ItemTypePlugin for TerrainPlugin {
             return;
         };
         pass.set_pipeline(pipeline);
-        for item in &coll.items {
+        let keys = bake_keys(&coll.items);
+        for (item, &key) in coll.items.iter().zip(keys.iter()) {
             if item.settings.hidden {
                 continue;
             }
-            let key = item.settings.pick_id;
             let Some(baked) = self.baked.get(&key) else {
                 continue;
             };
@@ -852,11 +878,11 @@ impl ItemTypePlugin for TerrainPlugin {
             return;
         };
         let mut bound = false;
-        for item in &coll.items {
+        let keys = bake_keys(&coll.items);
+        for (item, &key) in coll.items.iter().zip(keys.iter()) {
             if item.settings.hidden || !item.settings.selected {
                 continue;
             }
-            let key = item.settings.pick_id;
             let Some(baked) = self.baked.get(&key) else {
                 continue;
             };
@@ -891,11 +917,11 @@ impl ItemTypePlugin for TerrainPlugin {
             return;
         };
         let mut bound = false;
-        for item in &coll.items {
+        let keys = bake_keys(&coll.items);
+        for (item, &key) in coll.items.iter().zip(keys.iter()) {
             if item.settings.hidden || item.settings.pick_id == PickId::NONE {
                 continue;
             }
-            let key = item.settings.pick_id;
             let Some(baked) = self.baked.get(&key) else {
                 continue;
             };
@@ -919,14 +945,99 @@ impl ItemTypePlugin for TerrainPlugin {
         }
     }
 
+    /// GPU bytes the baked terrains hold: the per-item uniform and every
+    /// texture and patch mesh behind it.
+    ///
+    /// A terrain's splatmaps and layer arrays are usually the largest thing a
+    /// scene using this crate holds, and none of it was visible to
+    /// `ResidentBytes` before, so a host budgeting a working set saw a terrain
+    /// as free.
+    fn resident_bytes(&self) -> u64 {
+        self.baked
+            .values()
+            .map(|b| {
+                let textures: u64 = [
+                    &b.splatmap_a_tex,
+                    &b.splatmap_b_tex,
+                    &b.layer_tex,
+                    &b.normal_tex,
+                    &b.mask_tex,
+                ]
+                .into_iter()
+                .map(texture_bytes)
+                .sum();
+                let meshes: u64 = b
+                    .patches
+                    .iter()
+                    .flat_map(|p| p.lods.iter())
+                    .map(|m| m.vbuf.size() + m.ibuf.size())
+                    .sum();
+                b.uniform_buf.size() + textures + meshes
+            })
+            .sum()
+    }
+
+    /// Bounds for the wireframe toggle.
+    ///
+    /// The patch grid is what a terrain is actually made of, and drawing it is
+    /// the first thing the hook asks for, but a heightmap of any size carries
+    /// hundreds to thousands of patches and the result is a solid block of
+    /// lines. The extent and height range are the part a viewer cannot
+    /// otherwise see, so that is what this draws. Selection is not handled
+    /// here: terrain rasterises a silhouette, so `outline_mask` already rings
+    /// it properly.
+    fn wireframe_polylines(
+        &self,
+        items: &dyn PluginItemCollection,
+        ctx: &ItemFrameContext<'_>,
+    ) -> Vec<viewport_lib::PolylineItem> {
+        let Some(coll) = items.as_any().downcast_ref::<TerrainCollection>() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for item in &coll.items {
+            if item.settings.hidden || !(ctx.wireframe_mode || item.settings.wireframe) {
+                continue;
+            }
+            let mut line =
+                viewport_lib::aabb_wireframe_polyline(&item_bounds(item), [0.7, 0.7, 0.8, 1.0]);
+            line.settings.wireframe = true;
+            out.push(line);
+        }
+        out
+    }
+
+    /// Box select: a terrain is caught when its bounds touch the rectangle.
+    ///
+    /// Tested against the projected bounding box rather than the surface, which
+    /// over-selects for a terrain whose visible portion sits to one side of its
+    /// extent. That is the same answer the built-in bounds-picked types give,
+    /// and box select is a coarse gesture; the ray pick in `pick` is the one
+    /// that walks the actual heightmap.
+    fn pick_rect(&self, ctx: &RectPickContext<'_>) -> viewport_lib::renderer::PickRectResult {
+        let mut result = viewport_lib::renderer::PickRectResult::default();
+        if !ctx.mask.contains(viewport_lib::renderer::PickMask::OBJECT) {
+            return result;
+        }
+        for (&(pick_id, _), baked) in self.baked.iter() {
+            if pick_id == PickId::NONE {
+                continue;
+            }
+            if bounds_touch_rect(&baked.cpu, ctx) {
+                result.objects.push(pick_id.0);
+            }
+        }
+        result
+    }
+
     fn pick(
         &self,
         ray: &PickRay,
         _ctx: &viewport_lib::plugin_api::PickContext,
     ) -> Option<(f32, viewport_lib::PickHit)> {
         let mut best: Option<(f32, viewport_lib::PickHit)> = None;
-        for (pick_id, baked) in self.baked.iter() {
-            if let Some((t, hit)) = pick::pick_heightmap(ray, &baked.cpu, *pick_id) {
+        for (&(pick_id, _), baked) in self.baked.iter() {
+            if let Some((t, hit)) = pick::pick_heightmap(ray, &baked.cpu, pick_id) {
                 if best.as_ref().is_none_or(|(bt, _)| t < *bt) {
                     best = Some((t, hit));
                 }
@@ -1313,4 +1424,69 @@ mod tests {
         // the GPU.
         assert_eq!(std::mem::size_of::<LayerUniform>(), 96);
     }
+}
+
+/// GPU bytes one texture occupies, summed over its mip chain.
+///
+/// Assumes an uncompressed format, which every texture this crate creates is:
+/// `block_copy_size` is bytes per block, and for a block-compressed format that
+/// is not bytes per texel.
+fn texture_bytes(t: &wgpu::Texture) -> u64 {
+    let bytes_per_texel = t.format().block_copy_size(None).unwrap_or(4) as u64;
+    let layers = t.depth_or_array_layers() as u64;
+    let (mut w, mut h) = (t.width() as u64, t.height() as u64);
+    let mut total = 0;
+    for _ in 0..t.mip_level_count() {
+        total += w.max(1) * h.max(1) * layers * bytes_per_texel;
+        w /= 2;
+        h /= 2;
+    }
+    total
+}
+
+/// World bounds of a submitted terrain item.
+fn item_bounds(item: &crate::item::TerrainItem) -> viewport_lib::Aabb {
+    viewport_lib::Aabb {
+        min: item.origin + glam::Vec3::new(0.0, 0.0, item.height_range[0]),
+        max: item.origin
+            + glam::Vec3::new(item.world_size[0], item.world_size[1], item.height_range[1]),
+    }
+}
+
+/// Whether a baked terrain's bounding box touches the pick rectangle.
+///
+/// Projects the eight corners and tests the twelve edges, so a box that
+/// straddles the rectangle without putting a corner inside it still counts.
+fn bounds_touch_rect(cpu: &CpuHeightmap, ctx: &RectPickContext<'_>) -> bool {
+    let min = cpu.origin;
+    let max = cpu.origin + glam::Vec3::new(cpu.world_size[0], cpu.world_size[1], 0.0);
+    let corners: Vec<Option<glam::Vec2>> = (0..8)
+        .map(|i| {
+            let world = glam::Vec3::new(
+                if i & 1 == 0 { min.x } else { max.x },
+                if i & 2 == 0 { min.y } else { max.y },
+                if i & 4 == 0 { min.z } else { max.z },
+            );
+            pick_helpers::project_to_screen(world, ctx.view_proj, ctx.viewport_size)
+        })
+        .collect();
+
+    const EDGES: [(usize, usize); 12] = [
+        (0, 1),
+        (2, 3),
+        (4, 5),
+        (6, 7),
+        (0, 2),
+        (1, 3),
+        (4, 6),
+        (5, 7),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
+    ];
+    EDGES.iter().any(|&(a, b)| match (corners[a], corners[b]) {
+        (Some(a), Some(b)) => pick_helpers::segment_in_rect(a, b, ctx.rect_min, ctx.rect_max),
+        _ => false,
+    })
 }

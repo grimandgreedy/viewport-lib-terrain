@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use bytemuck::{Pod, Zeroable};
 use viewport_lib::plugin_api::{
-    ItemFrameContext, ItemTypePlugin, OutlineMaskContext, PaintContext, PickPassContext, PickRay,
-    PluginItemCollection, RectPickContext, SharedBindings, pick_helpers, shared_wgsl,
+    ItemCollections, ItemFrameContext, ItemTypePlugin, OutlineMaskContext, PaintContext,
+    PickPassContext, PickRay, RectPickContext, SharedBindings, pick_helpers, shared_wgsl,
 };
 use viewport_lib::renderer::PickId;
 use viewport_lib::resources::{
@@ -537,9 +537,9 @@ impl ItemTypePlugin for TerrainPlugin {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         _ctx: &ItemFrameContext<'_>,
-        items: &dyn PluginItemCollection,
+        items: &ItemCollections<'_>,
     ) -> Vec<wgpu::CommandBuffer> {
-        let Some(coll) = items.as_any().downcast_ref::<TerrainCollection>() else {
+        let Some(coll) = items.downcast::<TerrainCollection>() else {
             return Vec::new();
         };
         let Some(object_bgl) = self.object_bgl.as_ref() else {
@@ -800,9 +800,9 @@ impl ItemTypePlugin for TerrainPlugin {
         &mut self,
         frustum: &viewport_lib::camera::frustum::Frustum,
         ctx: &ItemFrameContext<'_>,
-        items: &dyn PluginItemCollection,
+        items: &ItemCollections<'_>,
     ) {
-        let Some(coll) = items.as_any().downcast_ref::<TerrainCollection>() else {
+        let Some(coll) = items.downcast::<TerrainCollection>() else {
             return;
         };
         let lod_distance = self.lod_distance.max(1.0);
@@ -834,9 +834,9 @@ impl ItemTypePlugin for TerrainPlugin {
         &self,
         pass: &mut wgpu::RenderPass<'_>,
         _ctx: &PaintContext<'_>,
-        items: &dyn PluginItemCollection,
+        items: &ItemCollections<'_>,
     ) {
-        let Some(coll) = items.as_any().downcast_ref::<TerrainCollection>() else {
+        let Some(coll) = items.downcast::<TerrainCollection>() else {
             return;
         };
         let Some(pipeline) = self.opaque_pipeline.as_ref() else {
@@ -869,9 +869,9 @@ impl ItemTypePlugin for TerrainPlugin {
         &self,
         pass: &mut wgpu::RenderPass<'_>,
         _ctx: &OutlineMaskContext<'_>,
-        items: &dyn PluginItemCollection,
+        items: &ItemCollections<'_>,
     ) {
-        let Some(coll) = items.as_any().downcast_ref::<TerrainCollection>() else {
+        let Some(coll) = items.downcast::<TerrainCollection>() else {
             return;
         };
         let Some(pipeline) = self.mask_pipeline.as_ref() else {
@@ -908,9 +908,9 @@ impl ItemTypePlugin for TerrainPlugin {
         &self,
         pass: &mut wgpu::RenderPass<'_>,
         _ctx: &PickPassContext<'_>,
-        items: &dyn PluginItemCollection,
+        items: &ItemCollections<'_>,
     ) {
-        let Some(coll) = items.as_any().downcast_ref::<TerrainCollection>() else {
+        let Some(coll) = items.downcast::<TerrainCollection>() else {
             return;
         };
         let Some(pipeline) = self.pick_pipeline.as_ref() else {
@@ -988,10 +988,10 @@ impl ItemTypePlugin for TerrainPlugin {
     /// it properly.
     fn wireframe_polylines(
         &self,
-        items: &dyn PluginItemCollection,
+        items: &ItemCollections<'_>,
         ctx: &ItemFrameContext<'_>,
     ) -> Vec<viewport_lib::PolylineItem> {
-        let Some(coll) = items.as_any().downcast_ref::<TerrainCollection>() else {
+        let Some(coll) = items.downcast::<TerrainCollection>() else {
             return Vec::new();
         };
         let mut out = Vec::new();

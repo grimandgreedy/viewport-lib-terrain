@@ -152,6 +152,10 @@ impl PluginItemCollection for EmptyCollection {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 impl ItemTypePlugin for HeightGenPlugin {
@@ -168,7 +172,7 @@ impl ItemTypePlugin for HeightGenPlugin {
         _device: &wgpu::Device,
         _queue: &wgpu::Queue,
         ctx: &ItemFrameContext<'_>,
-        _items: &dyn PluginItemCollection,
+        _items: &viewport_lib::plugin_api::ItemCollections<'_>,
     ) -> Vec<wgpu::CommandBuffer> {
         // ---- 1. Trigger-edge handling: kick off a new job on click. ----
         if self.trigger.swap(false, Ordering::Relaxed) && self.current_job.is_none() {

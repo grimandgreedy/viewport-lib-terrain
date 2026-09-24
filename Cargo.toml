@@ -16,6 +16,9 @@ exclude = ["examples/"]
 
 [dependencies]
 viewport-lib = { path = "../viewport-lib/crates/viewport-lib", version = "0.22" }
+# Sprites moved out of the renderer into the item-types crate; the detail
+# scatter emits them.
+viewport-lib-item-types = { path = "../viewport-lib/crates/viewport-lib-item-types", version = "0.1" }
 wgpu = "27.0"
 glam = { version = "=0.30.10", features = ["bytemuck"] }
 bytemuck = { version = "1.25", features = ["derive"] }

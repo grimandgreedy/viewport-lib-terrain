@@ -410,7 +410,7 @@ impl eframe::App for App {
             scatter_terrain_details(&self.terrain, &layers, &params, &mut self.detail_out);
             frame_data
                 .scene
-                .items_mut::<viewport_lib::SpriteItem>()
+                .items_mut::<viewport_lib_item_types::SpriteItem>()
                 .extend(self.detail_out.sprites.iter().cloned());
             frame_data
                 .scene

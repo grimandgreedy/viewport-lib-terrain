@@ -18,7 +18,7 @@
 //! are skipped without per-sample work.
 
 use viewport_lib::{MeshId, MeshInstanceItem, SpriteBlend, TextureId};
-use viewport_lib_item_types::{SpriteItem, SpriteSizeMode};
+use viewport_lib_plugins::item_types::sprite::{SpriteItem, SpriteSizeMode};
 
 use crate::TerrainItem;
 

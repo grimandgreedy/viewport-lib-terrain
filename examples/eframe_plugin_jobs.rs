@@ -11,6 +11,9 @@
 //! `TerrainItem` so the rendered landscape changes whenever the user
 //! clicks Run.
 
+mod common;
+
+use viewport_lib::Colour;
 use std::any::Any;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -300,7 +303,7 @@ fn main() -> eframe::Result {
             let trigger = Arc::new(AtomicBool::new(false));
             let shared = Arc::new(SharedDemoState::default());
 
-            let mut renderer = ViewportRenderer::new(device, format);
+            let mut renderer = ViewportRenderer::new(device, common::render_format(format));
             // Two plugins, registered together: the height generator
             // does the CPU work via ctx.jobs; TerrainPlugin renders the
             // resulting heightmap.
@@ -373,7 +376,7 @@ impl App {
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Keep the UI repainting so the running-clock ticks and the
         // orbit camera stays smooth on its own.
         ctx.request_repaint_after(Duration::from_millis(33));
@@ -495,11 +498,7 @@ impl eframe::App for App {
                 },
             );
 
-            ui.painter()
-                .add(eframe::egui_wgpu::Callback::new_paint_callback(
-                    rect,
-                    ViewportCallback { frame: frame_data },
-                ));
+            common::show(ui, frame, rect, &frame_data);
 
             if response.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
@@ -512,7 +511,7 @@ impl eframe::App for App {
 /// so the other layers are present but unused.
 fn make_layers() -> [TerrainLayer; LAYER_COUNT] {
     let neutral = TerrainLayer {
-        albedo: [0.5, 0.5, 0.5],
+        albedo: Colour::srgb_rgb(0.5, 0.5, 0.5).to_linear_rgb(),
         metallic: 0.0,
         roughness: 0.85,
         height_bias: 0.0,
@@ -520,7 +519,7 @@ fn make_layers() -> [TerrainLayer; LAYER_COUNT] {
     };
     let mut layers = [neutral; LAYER_COUNT];
     layers[0] = TerrainLayer {
-        albedo: [0.32, 0.50, 0.22],
+        albedo: Colour::srgb_rgb(0.32, 0.50, 0.22).to_linear_rgb(),
         metallic: 0.0,
         roughness: 0.90,
         height_bias: 0.0,
@@ -533,33 +532,3 @@ fn make_layers() -> [TerrainLayer; LAYER_COUNT] {
 // Paint callback bridging egui_wgpu to the viewport renderer
 // ---------------------------------------------------------------------------
 
-struct ViewportCallback {
-    frame: FrameData,
-}
-
-impl eframe::egui_wgpu::CallbackTrait for ViewportCallback {
-    fn prepare(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        _screen_descriptor: &eframe::egui_wgpu::ScreenDescriptor,
-        _egui_encoder: &mut wgpu::CommandEncoder,
-        callback_resources: &mut eframe::egui_wgpu::CallbackResources,
-    ) -> Vec<wgpu::CommandBuffer> {
-        if let Some(renderer) = callback_resources.get_mut::<ViewportRenderer>() {
-            return renderer.pass().prepare(device, queue, &self.frame);
-        }
-        Vec::new()
-    }
-
-    fn paint(
-        &self,
-        _info: egui::PaintCallbackInfo,
-        render_pass: &mut wgpu::RenderPass<'static>,
-        callback_resources: &eframe::egui_wgpu::CallbackResources,
-    ) {
-        if let Some(renderer) = callback_resources.get::<ViewportRenderer>() {
-            renderer.pass_view().paint(render_pass, &self.frame);
-        }
-    }
-}

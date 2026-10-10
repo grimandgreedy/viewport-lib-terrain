@@ -11,6 +11,9 @@
 //! and the LOD distance. The HUD prints the resulting patch totals so the
 //! cull cost can be eyeballed alongside the frame time.
 
+mod common;
+
+use viewport_lib::Colour;
 use eframe::egui;
 use std::sync::Arc;
 use viewport_lib::{
@@ -49,7 +52,7 @@ fn main() -> eframe::Result {
             let device = &rs.device;
             let format = rs.target_format;
 
-            let mut renderer = ViewportRenderer::new(device, format);
+            let mut renderer = ViewportRenderer::new(device, common::render_format(format));
             let plugin = TerrainPlugin::new()
                 .with_patch_cells(DEFAULT_PATCH_CELLS)
                 .with_max_lod(DEFAULT_MAX_LOD)
@@ -171,7 +174,7 @@ impl App {
 fn default_layers() -> [TerrainLayer; LAYER_COUNT] {
     let mut layers = [TerrainLayer::default(); LAYER_COUNT];
     layers[0] = TerrainLayer {
-        albedo: [0.32, 0.46, 0.22],
+        albedo: Colour::srgb_rgb(0.32, 0.46, 0.22).to_linear_rgb(),
         metallic: 0.0,
         roughness: 0.90,
         height_bias: 0.0,
@@ -248,7 +251,7 @@ fn build_heightmap(dim: usize, gx: u32, gy: u32) -> Vec<u16> {
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let now = std::time::Instant::now();
         let dt_ms = now.duration_since(self.last_frame).as_secs_f32() * 1000.0;
         self.last_frame = now;
@@ -488,11 +491,7 @@ impl eframe::App for App {
                 },
             );
 
-            ui.painter()
-                .add(eframe::egui_wgpu::Callback::new_paint_callback(
-                    rect,
-                    ViewportCallback { frame: frame_data },
-                ));
+            common::show(ui, frame, rect, &frame_data);
 
             if response.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
@@ -530,33 +529,3 @@ impl App {
     }
 }
 
-struct ViewportCallback {
-    frame: FrameData,
-}
-
-impl eframe::egui_wgpu::CallbackTrait for ViewportCallback {
-    fn prepare(
-        &self,
-        device: &eframe::wgpu::Device,
-        queue: &eframe::wgpu::Queue,
-        _sd: &eframe::egui_wgpu::ScreenDescriptor,
-        _enc: &mut eframe::wgpu::CommandEncoder,
-        resources: &mut eframe::egui_wgpu::CallbackResources,
-    ) -> Vec<eframe::wgpu::CommandBuffer> {
-        if let Some(renderer) = resources.get_mut::<ViewportRenderer>() {
-            return renderer.pass().prepare(device, queue, &self.frame);
-        }
-        Vec::new()
-    }
-
-    fn paint(
-        &self,
-        _info: eframe::egui::PaintCallbackInfo,
-        render_pass: &mut eframe::wgpu::RenderPass<'static>,
-        resources: &eframe::egui_wgpu::CallbackResources,
-    ) {
-        if let Some(renderer) = resources.get::<ViewportRenderer>() {
-            renderer.pass_view().paint(render_pass, &self.frame);
-        }
-    }
-}

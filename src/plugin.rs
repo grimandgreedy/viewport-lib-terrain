@@ -1000,7 +1000,7 @@ impl ItemTypePlugin for TerrainPlugin {
                 continue;
             }
             let mut line =
-                viewport_lib::aabb_wireframe_polyline(&item_bounds(item), [0.7, 0.7, 0.8, 1.0]);
+                viewport_lib::aabb_wireframe_polyline(&item_bounds(item), viewport_lib::Colour::linear(0.7, 0.7, 0.8, 1.0));
             line.settings.wireframe = true;
             out.push(line);
         }

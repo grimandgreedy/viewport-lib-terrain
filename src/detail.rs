@@ -291,7 +291,7 @@ pub fn scatter_terrain_details(
             s.texture_id = tex;
             s.positions = positions;
             s.sizes = sizes;
-            s.default_colour = colour.into();
+            s.default_colour = viewport_lib::Colour::from_linear_array(colour);
             s.default_size = layer.size;
             s.size_mode = SpriteSizeMode::WorldSpace;
             s.depth_write = true;
@@ -307,7 +307,7 @@ pub fn scatter_terrain_details(
             m.mesh_id = mesh_id;
             m.texture_id = tex;
             m.transforms = transforms;
-            m.colours = colours.into_iter().map(Into::into).collect();
+            m.colours = colours.into_iter().map(viewport_lib::Colour::from_linear_array).collect();
             m.blend = SpriteBlend::AlphaBlend;
             m
         };

@@ -14,6 +14,9 @@
 //! retained between frames; placement is deterministic per camera
 //! position.
 
+mod common;
+
+use viewport_lib::Colour;
 use eframe::egui;
 use viewport_lib::{
     ButtonState, Camera, CameraFrame, FrameData, ItemSettings, LightingSettings, MeshId,
@@ -48,7 +51,7 @@ fn main() -> eframe::Result {
             let device = &rs.device;
             let format = rs.target_format;
 
-            let mut renderer = ViewportRenderer::new(device, format);
+            let mut renderer = ViewportRenderer::new(device, common::render_format(format));
             let plugin = TerrainPlugin::new()
                 .with_patch_cells(32)
                 .with_max_lod(4)
@@ -114,56 +117,56 @@ impl App {
 
         let layers: [TerrainLayer; LAYER_COUNT] = [
             TerrainLayer {
-                albedo: [0.26, 0.42, 0.18],
+                albedo: Colour::srgb_rgb(0.26, 0.42, 0.18).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.92,
                 height_bias: 0.0,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: [0.42, 0.28, 0.16],
+                albedo: Colour::srgb_rgb(0.42, 0.28, 0.16).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.85,
                 height_bias: 0.0,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: [0.46, 0.44, 0.42],
+                albedo: Colour::srgb_rgb(0.46, 0.44, 0.42).to_linear_rgb(),
                 metallic: 0.05,
                 roughness: 0.70,
                 height_bias: 0.15,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: [0.82, 0.74, 0.48],
+                albedo: Colour::srgb_rgb(0.82, 0.74, 0.48).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.80,
                 height_bias: 0.0,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: [0.58, 0.52, 0.44],
+                albedo: Colour::srgb_rgb(0.58, 0.52, 0.44).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.55,
                 height_bias: 0.55,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: [0.20, 0.34, 0.16],
+                albedo: Colour::srgb_rgb(0.20, 0.34, 0.16).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.95,
                 height_bias: -0.15,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: [0.94, 0.95, 0.98],
+                albedo: Colour::srgb_rgb(0.94, 0.95, 0.98).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.45,
                 height_bias: 0.50,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: [0.22, 0.20, 0.18],
+                albedo: Colour::srgb_rgb(0.22, 0.20, 0.18).to_linear_rgb(),
                 metallic: 0.10,
                 roughness: 0.55,
                 height_bias: 0.40,
@@ -220,7 +223,7 @@ impl App {
             DetailLayer {
                 kind: DetailKind::Billboard {
                     texture_id: None,
-                    colour: [0.32, 0.58, 0.22, 1.0],
+                    colour: Colour::srgb(0.32, 0.58, 0.22, 1.0).to_linear_rgba(),
                 },
                 surface_layer: 0,
                 weight_threshold: 0.35,
@@ -235,7 +238,7 @@ impl App {
                     mesh_id: self.tree_mesh_id,
                     mesh_texture_id: None,
                     impostor_texture_id: None,
-                    colour: [0.18, 0.32, 0.14, 1.0],
+                    colour: Colour::srgb(0.18, 0.32, 0.14, 1.0).to_linear_rgba(),
                     switch_distance: self.ui.tree_switch,
                 },
                 surface_layer: 1,
@@ -250,7 +253,7 @@ impl App {
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.last_pixels_per_point = ctx.pixels_per_point();
 
         egui::SidePanel::right("hud").show(ctx, |ui| {
@@ -417,11 +420,7 @@ impl eframe::App for App {
                 .mesh_instances
                 .extend(self.detail_out.mesh_instances.iter().cloned());
 
-            ui.painter()
-                .add(eframe::egui_wgpu::Callback::new_paint_callback(
-                    rect,
-                    ViewportCallback { frame: frame_data },
-                ));
+            common::show(ui, frame, rect, &frame_data);
 
             if response.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
@@ -545,33 +544,3 @@ fn quantise(x: f32) -> u8 {
     (x.clamp(0.0, 1.0) * 255.0) as u8
 }
 
-struct ViewportCallback {
-    frame: FrameData,
-}
-
-impl eframe::egui_wgpu::CallbackTrait for ViewportCallback {
-    fn prepare(
-        &self,
-        device: &eframe::wgpu::Device,
-        queue: &eframe::wgpu::Queue,
-        _sd: &eframe::egui_wgpu::ScreenDescriptor,
-        _enc: &mut eframe::wgpu::CommandEncoder,
-        resources: &mut eframe::egui_wgpu::CallbackResources,
-    ) -> Vec<eframe::wgpu::CommandBuffer> {
-        if let Some(renderer) = resources.get_mut::<ViewportRenderer>() {
-            return renderer.pass().prepare(device, queue, &self.frame);
-        }
-        Vec::new()
-    }
-
-    fn paint(
-        &self,
-        _info: eframe::egui::PaintCallbackInfo,
-        render_pass: &mut eframe::wgpu::RenderPass<'static>,
-        resources: &eframe::egui_wgpu::CallbackResources,
-    ) {
-        if let Some(renderer) = resources.get::<ViewportRenderer>() {
-            renderer.pass_view().paint(render_pass, &self.frame);
-        }
-    }
-}

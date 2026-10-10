@@ -5,6 +5,9 @@
 //! steep), renders through the terrain plugin, orbits a camera.
 //! Left-click toggles selection so the outline highlight exercises.
 
+mod common;
+
+use viewport_lib::Colour;
 use eframe::egui;
 use viewport_lib::{
     ButtonState, Camera, CameraFrame, FrameData, ItemSettings, LightingSettings,
@@ -37,7 +40,7 @@ fn main() -> eframe::Result {
             let device = &rs.device;
             let format = rs.target_format;
 
-            let mut renderer = ViewportRenderer::new(device, format);
+            let mut renderer = ViewportRenderer::new(device, common::render_format(format));
             renderer.with_item_type_plugin(device, Box::new(TerrainPlugin::new()));
 
             rs.renderer.write().callback_resources.insert(renderer);
@@ -67,7 +70,7 @@ impl App {
         let layers: [TerrainLayer; LAYER_COUNT] = [
             // A.r: grass
             TerrainLayer {
-                albedo: [0.30, 0.46, 0.20],
+                albedo: Colour::srgb_rgb(0.30, 0.46, 0.20).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.92,
                 height_bias: 0.0,
@@ -75,7 +78,7 @@ impl App {
             },
             // A.g: dirt
             TerrainLayer {
-                albedo: [0.40, 0.27, 0.16],
+                albedo: Colour::srgb_rgb(0.40, 0.27, 0.16).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.85,
                 height_bias: 0.0,
@@ -83,7 +86,7 @@ impl App {
             },
             // A.b: rock
             TerrainLayer {
-                albedo: [0.42, 0.40, 0.38],
+                albedo: Colour::srgb_rgb(0.42, 0.40, 0.38).to_linear_rgb(),
                 metallic: 0.05,
                 roughness: 0.70,
                 height_bias: 0.15,
@@ -91,7 +94,7 @@ impl App {
             },
             // A.a: sand
             TerrainLayer {
-                albedo: [0.78, 0.70, 0.46],
+                albedo: Colour::srgb_rgb(0.78, 0.70, 0.46).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.78,
                 height_bias: 0.0,
@@ -99,7 +102,7 @@ impl App {
             },
             // B.r: pebbles (height-blends over sand and dirt)
             TerrainLayer {
-                albedo: [0.55, 0.50, 0.42],
+                albedo: Colour::srgb_rgb(0.55, 0.50, 0.42).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.60,
                 height_bias: 0.55,
@@ -107,7 +110,7 @@ impl App {
             },
             // B.g: moss (sneaks over grass at low spots)
             TerrainLayer {
-                albedo: [0.18, 0.32, 0.16],
+                albedo: Colour::srgb_rgb(0.18, 0.32, 0.16).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.95,
                 height_bias: -0.15,
@@ -115,7 +118,7 @@ impl App {
             },
             // B.b: snow (sits high)
             TerrainLayer {
-                albedo: [0.92, 0.94, 0.97],
+                albedo: Colour::srgb_rgb(0.92, 0.94, 0.97).to_linear_rgb(),
                 metallic: 0.0,
                 roughness: 0.50,
                 height_bias: 0.30,
@@ -123,7 +126,7 @@ impl App {
             },
             // B.a: dark rock vein (slightly raised over base rock)
             TerrainLayer {
-                albedo: [0.22, 0.20, 0.18],
+                albedo: Colour::srgb_rgb(0.22, 0.20, 0.18).to_linear_rgb(),
                 metallic: 0.10,
                 roughness: 0.55,
                 height_bias: 0.40,
@@ -161,7 +164,7 @@ impl App {
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             let (rect, response) =
                 ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -249,11 +252,7 @@ impl eframe::App for App {
                 },
             );
 
-            ui.painter()
-                .add(eframe::egui_wgpu::Callback::new_paint_callback(
-                    rect,
-                    ViewportCallback { frame: frame_data },
-                ));
+            common::show(ui, frame, rect, &frame_data);
 
             if response.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
@@ -372,33 +371,3 @@ fn quantise(x: f32) -> u8 {
     (x.clamp(0.0, 1.0) * 255.0) as u8
 }
 
-struct ViewportCallback {
-    frame: FrameData,
-}
-
-impl eframe::egui_wgpu::CallbackTrait for ViewportCallback {
-    fn prepare(
-        &self,
-        device: &eframe::wgpu::Device,
-        queue: &eframe::wgpu::Queue,
-        _sd: &eframe::egui_wgpu::ScreenDescriptor,
-        _enc: &mut eframe::wgpu::CommandEncoder,
-        resources: &mut eframe::egui_wgpu::CallbackResources,
-    ) -> Vec<eframe::wgpu::CommandBuffer> {
-        if let Some(renderer) = resources.get_mut::<ViewportRenderer>() {
-            return renderer.pass().prepare(device, queue, &self.frame);
-        }
-        Vec::new()
-    }
-
-    fn paint(
-        &self,
-        _info: eframe::egui::PaintCallbackInfo,
-        render_pass: &mut eframe::wgpu::RenderPass<'static>,
-        resources: &eframe::egui_wgpu::CallbackResources,
-    ) {
-        if let Some(renderer) = resources.get::<ViewportRenderer>() {
-            renderer.pass_view().paint(render_pass, &self.frame);
-        }
-    }
-}

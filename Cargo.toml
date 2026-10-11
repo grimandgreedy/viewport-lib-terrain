@@ -35,6 +35,10 @@ name = "eframe-terrain"
 path = "examples/eframe_terrain.rs"
 
 [[example]]
+name = "eframe-terrain-detail"
+path = "examples/eframe_terrain_detail.rs"
+
+[[example]]
 name = "eframe-terrain-lod"
 path = "examples/eframe_terrain_lod.rs"
 

@@ -341,6 +341,7 @@ impl App {
         terrain.height_range = [HEIGHT_MIN, HEIGHT_MAX];
         terrain.origin = glam::Vec3::new(-WORLD_SIZE * 0.5, -WORLD_SIZE * 0.5, 0.0);
         terrain.surface_layers = make_layers();
+        common::assets::apply_ground(&mut terrain);
         // A 1x1 splatmap pointing at layer 0; uniform colouring keeps the
         // demo focused on the heightmap (which is what changes between
         // Run clicks).

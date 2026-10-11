@@ -7,8 +7,8 @@
 //!   rock as primaries plus pebbles, moss, snow, and a dark rock vein
 //!   as accents. The height-blend slider drives sharpness; drag it
 //!   from 0 (smooth) to 30 (pebble-edged) to see the difference.
-//! - 16x16 patches at LOD 0; orbit the camera out to see lower LODs
-//!   kick in on far patches. The HUD reports per-LOD patch counts.
+//! - 32-cell patches at LOD 0; orbit the camera out to see lower LODs
+//!   kick in on far patches. The HUD reports how many patches draw at each LOD.
 //! - Sets `pixels_per_point` on the camera frame so the viewport
 //!   texture allocates at physical resolution on high-DPI displays.
 
@@ -28,8 +28,9 @@ use viewport_lib_terrain::{
 const TERRAIN_DIM: u32 = 513;
 const SPLATMAP_DIM: u32 = 2048;
 const WORLD_SIZE: f32 = 256.0;
-const HEIGHT_MIN: f32 = -3.0;
-const HEIGHT_MAX: f32 = 32.0;
+const HEIGHT_MIN: f32 = 0.0;
+/// The Rainier heightmap at this world size, with its relief exaggerated.
+const HEIGHT_MAX: f32 = 40.0;
 
 fn main() -> eframe::Result {
     eframe::run_native(
@@ -79,7 +80,7 @@ struct App {
 impl App {
     fn new() -> Self {
         let dim = TERRAIN_DIM as usize;
-        let heightmap = build_heightmap(dim);
+        let heightmap = common::assets::rainier_heightmap(TERRAIN_DIM);
         let splatmap_dim = SPLATMAP_DIM as usize;
         let (splat_a, splat_b) = build_splatmaps(
             &heightmap,
@@ -167,6 +168,7 @@ impl App {
         terrain.height_range = [HEIGHT_MIN, HEIGHT_MAX];
         terrain.origin = glam::Vec3::new(-WORLD_SIZE * 0.5, -WORLD_SIZE * 0.5, 0.0);
         terrain.surface_layers = layers;
+        common::assets::apply_ground(&mut terrain);
         terrain.splatmaps = [
             SplatmapData::new(splat_a, [SPLATMAP_DIM, SPLATMAP_DIM]),
             SplatmapData::new(splat_b, [SPLATMAP_DIM, SPLATMAP_DIM]),
@@ -217,6 +219,23 @@ impl eframe::App for App {
                 egui::Slider::new(&mut self.terrain.height_blend_noise_scale, 8.0..=256.0)
                     .text("noise scale"),
             );
+            ui.separator();
+            ui.label("Patches drawn per LOD");
+            let counts = frame
+                .wgpu_render_state()
+                .and_then(|rs| {
+                    rs.renderer
+                        .read()
+                        .callback_resources
+                        .get::<ViewportRenderer>()
+                        .and_then(|r| r.item_type_plugin::<TerrainPlugin>(viewport_lib_terrain::TYPE_NAME))
+                        .map(|p| p.lod_patch_counts())
+                })
+                .unwrap_or_default();
+            for (lod, n) in counts.drawn_per_lod.iter().enumerate() {
+                ui.label(format!("LOD {lod}: {n}"));
+            }
+            ui.label(format!("outside view: {}", counts.culled));
             ui.separator();
             ui.label("Layers");
             ui.label("R/G/B/A on splat A -> grass / dirt / rock / sand");
@@ -349,32 +368,6 @@ impl eframe::App for App {
     }
 }
 
-fn build_heightmap(dim: usize) -> Vec<u16> {
-    let mut out = Vec::with_capacity(dim * dim);
-    let n = (dim - 1) as f32;
-    for y in 0..dim {
-        let v = y as f32 / n;
-        for x in 0..dim {
-            let u = x as f32 / n;
-            // Layered sinusoids + small-scale ridges to give the LOD
-            // path something to actually decimate.
-            let mut h = 0.0_f32;
-            h += (u * std::f32::consts::TAU * 1.3).sin() * 0.45;
-            h += (v * std::f32::consts::TAU * 0.9).cos() * 0.35;
-            h += ((u * 4.7 + v * 3.1).sin() * 0.55 + (v * 2.3).cos() * 0.25) * 0.3;
-            h += ((u * 9.2).sin() * (v * 7.4).cos()) * 0.18;
-            h += ((u * 18.0).sin() * (v * 16.0).sin()) * 0.06;
-            // Push a mountain near (0.7, 0.65).
-            let dx = u - 0.7;
-            let dy = v - 0.65;
-            let r = (dx * dx + dy * dy).sqrt();
-            h += (1.0 - smoothstep(r, 0.05, 0.35)).powi(2) * 0.9;
-            let unit = (h * 0.5 + 0.5).clamp(0.0, 1.0);
-            out.push((unit * u16::MAX as f32) as u16);
-        }
-    }
-    out
-}
 
 /// Build the two splatmaps at `(sw, sh)` resolution from a `(hw, hh)`
 /// heightmap. Bilinearly interpolates the heightmap so the layer

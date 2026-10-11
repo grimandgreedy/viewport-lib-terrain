@@ -210,6 +210,7 @@ fn build_grid(
                 0.0,
             );
             item.surface_layers = *layers;
+            common::assets::apply_ground(&mut item);
             // Re-use the same splatmap bytes across every item: this keeps
             // GPU memory linear in the number of items rather than quadratic.
             // SplatmapData carries its bytes behind an Arc, so .clone() is

@@ -20,8 +20,9 @@ use viewport_lib_terrain::{
 
 const TERRAIN_DIM: u32 = 257;
 const WORLD_SIZE: f32 = 64.0;
-const HEIGHT_MIN: f32 = -1.0;
-const HEIGHT_MAX: f32 = 6.0;
+const HEIGHT_MIN: f32 = 0.0;
+/// The Rainier heightmap at this world size, with its relief exaggerated.
+const HEIGHT_MAX: f32 = 14.0;
 
 fn main() -> eframe::Result {
     eframe::run_native(
@@ -60,7 +61,7 @@ struct App {
 impl App {
     fn new() -> Self {
         let dim = TERRAIN_DIM as usize;
-        let heightmap = build_heightmap(dim);
+        let heightmap = common::assets::rainier_heightmap(TERRAIN_DIM);
         let (splat_a, splat_b) =
             build_splatmaps(&heightmap, dim, dim, WORLD_SIZE, HEIGHT_MIN, HEIGHT_MAX);
 
@@ -142,6 +143,7 @@ impl App {
         terrain.height_range = [HEIGHT_MIN, HEIGHT_MAX];
         terrain.origin = glam::Vec3::new(-WORLD_SIZE * 0.5, -WORLD_SIZE * 0.5, 0.0);
         terrain.surface_layers = layers;
+        common::assets::apply_ground(&mut terrain);
         terrain.splatmaps = [
             SplatmapData::new(splat_a, [TERRAIN_DIM, TERRAIN_DIM]),
             SplatmapData::new(splat_b, [TERRAIN_DIM, TERRAIN_DIM]),
@@ -261,23 +263,6 @@ impl eframe::App for App {
     }
 }
 
-fn build_heightmap(dim: usize) -> Vec<u16> {
-    let mut out = Vec::with_capacity(dim * dim);
-    let n = (dim - 1) as f32;
-    for y in 0..dim {
-        let v = y as f32 / n;
-        for x in 0..dim {
-            let u = x as f32 / n;
-            let mut h = 0.0_f32;
-            h += (u * std::f32::consts::TAU * 1.5).sin() * 0.4;
-            h += (v * std::f32::consts::TAU * 1.2).cos() * 0.3;
-            h += ((u * 4.7 + v * 3.1).sin() * 0.5 + (v * 2.3).cos() * 0.3) * 0.3;
-            let unit = (h * 0.5 + 0.5).clamp(0.0, 1.0);
-            out.push((unit * u16::MAX as f32) as u16);
-        }
-    }
-    out
-}
 
 /// Paint the two splatmaps from the heightmap.
 ///

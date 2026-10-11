@@ -258,6 +258,37 @@ impl TerrainPlugin {
         self.lod_distance = distance.max(1.0);
         self
     }
+    /// How many patches the last frame drew at each LOD level, and how many it
+    /// skipped because they were outside the view.
+    ///
+    /// Counts cover every terrain the plugin has baked, as of the last frame
+    /// that culled them, so they trail the camera by one frame.
+    pub fn lod_patch_counts(&self) -> LodPatchCounts {
+        let mut counts = LodPatchCounts {
+            drawn_per_lod: vec![0; self.max_lod as usize],
+            culled: 0,
+        };
+        for baked in self.baked.values() {
+            for patch in &baked.patches {
+                if !patch.visible {
+                    counts.culled += 1;
+                    continue;
+                }
+                let lod = (patch.chosen_lod as usize).min(counts.drawn_per_lod.len() - 1);
+                counts.drawn_per_lod[lod] += 1;
+            }
+        }
+        counts
+    }
+}
+
+/// Patch counts from [`TerrainPlugin::lod_patch_counts`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LodPatchCounts {
+    /// Patches drawn at each LOD level. Index 0 is the full-resolution level.
+    pub drawn_per_lod: Vec<u32>,
+    /// Patches skipped because they were outside the view.
+    pub culled: u32,
 }
 
 fn build_shader_source() -> String {

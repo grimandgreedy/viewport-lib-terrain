@@ -3,12 +3,14 @@
 //! Builds on the LOD demo by scattering detail meshes and billboards
 //! across the terrain every frame:
 //!
-//! - Grass tufts: world-space billboards scattered on the "grass"
-//!   splatmap channel, density ramped by a slider.
-//! - Trees: instanced cone-on-cylinder mesh near the camera, swapped
-//!   for a flat green billboard impostor past the LOD switch distance.
+//! - Grass tufts: low-poly meshes scattered on the "grass" splatmap
+//!   channel, density ramped by a slider.
+//! - Trees: a low-poly pine mesh near the focal point, swapped for a
+//!   pine-shaped billboard impostor past the LOD switch distance.
 //!
-//! Both batches are produced by `scatter_terrain_details`, which runs
+//! The meshes are opaque scene items, so the terrain occludes them. The
+//! sprite plugin must be registered for the impostors to draw. Both are
+//! produced by `scatter_terrain_details`, which runs
 //! a Halton(2,3) sequence over a camera-centred disc and accepts
 //! samples weighted by the painted layer at each point. Nothing is
 //! retained between frames; placement is deterministic per camera
@@ -20,8 +22,8 @@ use viewport_lib::Colour;
 use eframe::egui;
 use viewport_lib::{
     ButtonState, Camera, CameraFrame, FrameData, ItemSettings, LightingSettings, MeshId,
-    OrbitCameraController, PickId, SceneFrame, ScrollUnits, ViewportContext, ViewportEvent,
-    ViewportRenderer, primitives,
+    OrbitCameraController, PickId, SceneFrame, ScrollUnits, TextureId, ViewportContext, ViewportEvent,
+    ViewportRenderer,
 };
 use viewport_lib_terrain::{
     DetailKind, DetailLayer, DetailScatterOutput, DetailScatterParams, LAYER_COUNT, SplatmapData,
@@ -31,8 +33,9 @@ use viewport_lib_terrain::{
 const TERRAIN_DIM: u32 = 513;
 const SPLATMAP_DIM: u32 = 1024;
 const WORLD_SIZE: f32 = 256.0;
-const HEIGHT_MIN: f32 = -3.0;
-const HEIGHT_MAX: f32 = 32.0;
+const HEIGHT_MIN: f32 = 0.0;
+/// The Rainier heightmap at this world size, with its relief exaggerated.
+const HEIGHT_MAX: f32 = 40.0;
 
 fn main() -> eframe::Result {
     eframe::run_native(
@@ -58,18 +61,36 @@ fn main() -> eframe::Result {
                 .with_skirt_depth(2.0)
                 .with_lod_distance(96.0);
             renderer.with_item_type_plugin(device, Box::new(plugin));
+            // Tree impostors and grass billboards are sprites, which draw only once
+            // their plugin is registered.
+            renderer.with_item_type_plugin(
+                device,
+                Box::new(viewport_lib_plugins::item_types::sprite::SpritePlugin::default()),
+            );
 
-            // Tree mesh: simple stylised tree (a tall cylinder trunk
-            // would be ideal, but a cube scaled non-uniformly via the
-            // instance transform keeps the example small).
-            let tree_mesh = primitives::cube(1.0);
+            // Low-poly tree and grass tuft from the Kenney nature kit. The tree
+            // is scaled to one unit tall so a layer's size is its height in
+            // metres, and its distant impostor is a pine silhouette of the same
+            // height.
+            let queue = &rs.queue;
+            let mut tree = common::assets::load_kenney_model("tree_pineTallA");
+            common::assets::scale_to_height(&mut tree, 1.0);
             let tree_id = renderer
                 .resources_mut()
-                .upload_mesh_data(device, &tree_mesh)
+                .upload_mesh_data(device, &tree.mesh)
                 .expect("upload tree mesh");
+            let grass = common::assets::load_kenney_model("grass_large");
+            let grass_id = renderer
+                .resources_mut()
+                .upload_mesh_data(device, &grass.mesh)
+                .expect("upload grass mesh");
+            let impostor = renderer
+                .resources_mut()
+                .upload_texture(device, queue, common::assets::pine_impostor())
+                .expect("upload tree impostor");
 
             rs.renderer.write().callback_resources.insert(renderer);
-            Ok(Box::new(App::new(tree_id)))
+            Ok(Box::new(App::new(tree_id, grass_id, impostor)))
         }),
     )
 }
@@ -95,14 +116,17 @@ struct App {
     last_distance: f32,
     drag_in_viewport: bool,
     tree_mesh_id: MeshId,
+    grass_mesh_id: MeshId,
+    impostor_texture_id: TextureId,
     detail_out: DetailScatterOutput,
+    scene_generation: u64,
     ui: DetailUi,
 }
 
 impl App {
-    fn new(tree_mesh_id: MeshId) -> Self {
+    fn new(tree_mesh_id: MeshId, grass_mesh_id: MeshId, impostor_texture_id: TextureId) -> Self {
         let dim = TERRAIN_DIM as usize;
-        let heightmap = build_heightmap(dim);
+        let heightmap = common::assets::rainier_heightmap(TERRAIN_DIM);
         let splatmap_dim = SPLATMAP_DIM as usize;
         let (splat_a, splat_b) = build_splatmaps(
             &heightmap,
@@ -182,6 +206,7 @@ impl App {
         terrain.height_range = [HEIGHT_MIN, HEIGHT_MAX];
         terrain.origin = glam::Vec3::new(-WORLD_SIZE * 0.5, -WORLD_SIZE * 0.5, 0.0);
         terrain.surface_layers = layers;
+        common::assets::apply_ground(&mut terrain);
         terrain.splatmaps = [
             SplatmapData::new(splat_a, [SPLATMAP_DIM, SPLATMAP_DIM]),
             SplatmapData::new(splat_b, [SPLATMAP_DIM, SPLATMAP_DIM]),
@@ -204,13 +229,16 @@ impl App {
             last_distance: 120.0,
             drag_in_viewport: false,
             tree_mesh_id,
+            grass_mesh_id,
+            impostor_texture_id,
             detail_out: DetailScatterOutput::default(),
+            scene_generation: 0,
             ui: DetailUi {
                 grass_density: 0.5,
-                grass_size: 1.0,
+                grass_size: 2.5,
                 grass_radius: 60.0,
-                tree_density: 0.02,
-                tree_size: 4.0,
+                tree_density: 0.04,
+                tree_size: 9.0,
                 tree_radius: 120.0,
                 tree_switch: 50.0,
             },
@@ -221,9 +249,10 @@ impl App {
         vec![
             // Grass tufts on the "grass" channel (A.r = layer 0).
             DetailLayer {
-                kind: DetailKind::Billboard {
+                kind: DetailKind::Mesh {
+                    mesh_id: self.grass_mesh_id,
                     texture_id: None,
-                    colour: Colour::srgb(0.32, 0.58, 0.22, 1.0).to_linear_rgba(),
+                    colour: [1.0, 1.0, 1.0, 1.0],
                 },
                 surface_layer: 0,
                 weight_threshold: 0.35,
@@ -237,8 +266,8 @@ impl App {
                 kind: DetailKind::TreeLod {
                     mesh_id: self.tree_mesh_id,
                     mesh_texture_id: None,
-                    impostor_texture_id: None,
-                    colour: Colour::srgb(0.18, 0.32, 0.14, 1.0).to_linear_rgba(),
+                    impostor_texture_id: Some(self.impostor_texture_id),
+                    colour: [1.0, 1.0, 1.0, 1.0],
                     switch_distance: self.ui.tree_switch,
                 },
                 surface_layer: 1,
@@ -263,14 +292,14 @@ impl eframe::App for App {
                 self.last_eye.x, self.last_eye.y, self.last_eye.z
             ));
             ui.separator();
-            ui.label("Grass (billboards on grass layer)");
+            ui.label("Grass (tufts on grass layer)");
             ui.add(egui::Slider::new(&mut self.ui.grass_density, 0.0..=4.0).text("density /m^2"));
-            ui.add(egui::Slider::new(&mut self.ui.grass_size, 0.2..=3.0).text("size"));
+            ui.add(egui::Slider::new(&mut self.ui.grass_size, 0.5..=8.0).text("size"));
             ui.add(egui::Slider::new(&mut self.ui.grass_radius, 10.0..=150.0).text("radius"));
             ui.separator();
             ui.label("Trees (LOD mesh -> impostor)");
             ui.add(egui::Slider::new(&mut self.ui.tree_density, 0.0..=0.2).text("density /m^2"));
-            ui.add(egui::Slider::new(&mut self.ui.tree_size, 1.0..=10.0).text("size"));
+            ui.add(egui::Slider::new(&mut self.ui.tree_size, 2.0..=30.0).text("size"));
             ui.add(egui::Slider::new(&mut self.ui.tree_radius, 20.0..=250.0).text("radius"));
             ui.add(egui::Slider::new(&mut self.ui.tree_switch, 5.0..=150.0).text("switch dist"));
             ui.separator();
@@ -282,19 +311,12 @@ impl eframe::App for App {
                     .map(|s| s.positions.len())
                     .sum::<usize>()
             ));
-            ui.label(format!(
-                "mesh instances: {}",
-                self.detail_out
-                    .mesh_instances
-                    .iter()
-                    .map(|m| m.transforms.len())
-                    .sum::<usize>()
-            ));
+            ui.label(format!("meshes: {}", self.detail_out.meshes.len()));
             ui.separator();
             ui.label(
-                "Detail batches are rebuilt every frame around the camera \
-                 from a Halton sequence. Trees within `switch dist` draw as \
-                 cube meshes; trees beyond draw as flat impostor sprites.",
+                "Detail batches are rebuilt every frame around the focal point \
+                 from a Halton sequence. Trees within `switch dist` of the \
+                 focal point draw as meshes; trees beyond draw as impostor sprites.",
             );
         });
 
@@ -391,16 +413,6 @@ impl eframe::App for App {
             self.last_forward = glam::Vec3::from(camera_frame.render_camera.forward);
             self.last_distance = camera_frame.render_camera.distance;
 
-            let mut frame_data = FrameData::new(camera_frame, SceneFrame::default());
-            frame_data.effects.lighting = LightingSettings::default();
-
-            frame_data.scene.submit_plugin_items(
-                viewport_lib_terrain::TYPE_NAME,
-                TerrainCollection {
-                    items: vec![self.terrain.clone()],
-                },
-            );
-
             // Scatter around the orbit focal point on the ground, not
             // the eye; otherwise the detail footprint slides off the
             // look-at as the camera orbits.
@@ -411,14 +423,27 @@ impl eframe::App for App {
             };
             let layers = self.build_detail_layers();
             scatter_terrain_details(&self.terrain, &layers, &params, &mut self.detail_out);
+
+            // The scattered meshes are ordinary opaque items, so they depth-test
+            // against the terrain. The scatter changes every frame, so the scene
+            // needs a new generation each time or the renderer reuses the last
+            // batch.
+            self.scene_generation = self.scene_generation.wrapping_add(1);
+            let scene = SceneFrame::from_surface_items(self.detail_out.meshes.clone())
+                .with_generation(self.scene_generation);
+            let mut frame_data = FrameData::new(camera_frame, scene);
+            frame_data.effects.lighting = LightingSettings::default();
+
+            frame_data.scene.submit_plugin_items(
+                viewport_lib_terrain::TYPE_NAME,
+                TerrainCollection {
+                    items: vec![self.terrain.clone()],
+                },
+            );
             frame_data
                 .scene
                 .items_mut::<viewport_lib_plugins::item_types::sprite::SpriteItem>()
                 .extend(self.detail_out.sprites.iter().cloned());
-            frame_data
-                .scene
-                .mesh_instances
-                .extend(self.detail_out.mesh_instances.iter().cloned());
 
             common::show(ui, frame, rect, &frame_data);
 
@@ -430,28 +455,6 @@ impl eframe::App for App {
     }
 }
 
-fn build_heightmap(dim: usize) -> Vec<u16> {
-    let mut out = Vec::with_capacity(dim * dim);
-    let n = (dim - 1) as f32;
-    for y in 0..dim {
-        let v = y as f32 / n;
-        for x in 0..dim {
-            let u = x as f32 / n;
-            let mut h = 0.0_f32;
-            h += (u * std::f32::consts::TAU * 1.3).sin() * 0.45;
-            h += (v * std::f32::consts::TAU * 0.9).cos() * 0.35;
-            h += ((u * 4.7 + v * 3.1).sin() * 0.55 + (v * 2.3).cos() * 0.25) * 0.3;
-            h += ((u * 9.2).sin() * (v * 7.4).cos()) * 0.18;
-            let dx = u - 0.7;
-            let dy = v - 0.65;
-            let r = (dx * dx + dy * dy).sqrt();
-            h += (1.0 - smoothstep(r, 0.05, 0.35)).powi(2) * 0.9;
-            let unit = (h * 0.5 + 0.5).clamp(0.0, 1.0);
-            out.push((unit * u16::MAX as f32) as u16);
-        }
-    }
-    out
-}
 
 fn build_splatmaps(
     heights: &[u16],

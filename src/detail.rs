@@ -3,8 +3,8 @@
 //! Detail meshes and billboards are not part of the terrain item itself.
 //! The host configures a list of [`DetailLayer`]s, calls
 //! [`scatter_terrain_details`] once per frame, and submits the returned
-//! `SpriteItem` / `MeshInstanceItem` batches via the regular
-//! `SceneFrame::sprite_items` and `SceneFrame::mesh_instances` paths.
+//! `SpriteItem` batches and opaque `SceneRenderItem`s via the regular
+//! sprite and surface-item paths.
 //!
 //! Positions are generated from a Halton(2,3) low-discrepancy sequence
 //! over the terrain bounds and accepted with a probability proportional
@@ -17,7 +17,7 @@
 //! [`DetailScatterParams::camera_xy`]; samples outside the footprint
 //! are skipped without per-sample work.
 
-use viewport_lib::{MeshId, MeshInstanceItem, SpriteBlend, TextureId};
+use viewport_lib::{Material, MeshId, SceneRenderItem, SpriteBlend, TextureId};
 use viewport_lib_plugins::item_types::sprite::{SpriteItem, SpriteSizeMode};
 
 use crate::TerrainItem;
@@ -33,7 +33,7 @@ pub enum DetailKind {
         /// RGBA tint applied to every instance.
         colour: [f32; 4],
     },
-    /// Instanced mesh. One [`MeshInstanceItem`] per layer.
+    /// Mesh. One opaque scene item per placed instance.
     Mesh {
         mesh_id: MeshId,
         texture_id: Option<TextureId>,
@@ -92,13 +92,16 @@ pub struct DetailScatterParams {
 #[derive(Default)]
 pub struct DetailScatterOutput {
     pub sprites: Vec<SpriteItem>,
-    pub mesh_instances: Vec<MeshInstanceItem>,
+    /// One opaque scene item per placed mesh. They go in the frame's surface
+    /// items, so they write depth and are occluded by the terrain like any
+    /// other opaque geometry. The renderer batches items that share a mesh.
+    pub meshes: Vec<SceneRenderItem>,
 }
 
 impl DetailScatterOutput {
     pub fn clear(&mut self) {
         self.sprites.clear();
-        self.mesh_instances.clear();
+        self.meshes.clear();
     }
 }
 
@@ -294,22 +297,30 @@ pub fn scatter_terrain_details(
             s.default_colour = viewport_lib::Colour::from_linear_array(colour);
             s.default_size = layer.size;
             s.size_mode = SpriteSizeMode::WorldSpace;
-            s.depth_write = true;
+            // A textured sprite has transparent texels, which must not write depth.
+            s.depth_write = tex.is_none();
             s.blend = SpriteBlend::AlphaBlend;
             s
         };
-        let make_mesh = |mesh_id: MeshId,
-                         tex: Option<TextureId>,
-                         transforms: Vec<[[f32; 4]; 4]>,
-                         colours: Vec<[f32; 4]>|
-         -> MeshInstanceItem {
-            let mut m = MeshInstanceItem::default();
-            m.mesh_id = mesh_id;
-            m.texture_id = tex;
-            m.transforms = transforms;
-            m.colours = colours.into_iter().map(viewport_lib::Colour::from_linear_array).collect();
-            m.blend = SpriteBlend::AlphaBlend;
-            m
+        let make_meshes = |mesh_id: MeshId,
+                           tex: Option<TextureId>,
+                           transforms: Vec<[[f32; 4]; 4]>,
+                           colour: [f32; 4]|
+         -> Vec<SceneRenderItem> {
+            let mut material = Material::from_colour(viewport_lib::Colour::from_linear_array(colour));
+            material.texture_id = tex;
+            material.metallic = 0.0;
+            material.roughness = 0.9;
+            transforms
+                .into_iter()
+                .map(|model| {
+                    let mut item = SceneRenderItem::default();
+                    item.mesh_id = mesh_id;
+                    item.model = model;
+                    item.material = material.clone();
+                    item
+                })
+                .collect()
         };
 
         match &layer.kind {
@@ -325,12 +336,11 @@ pub fn scatter_terrain_details(
             }
             DetailKind::Mesh { mesh_id, texture_id, colour } => {
                 if !mesh_transforms.is_empty() {
-                    let colours = vec![*colour; mesh_transforms.len()];
-                    out.mesh_instances.push(make_mesh(
+                    out.meshes.extend(make_meshes(
                         *mesh_id,
                         *texture_id,
                         mesh_transforms,
-                        colours,
+                        *colour,
                     ));
                 }
             }
@@ -342,12 +352,11 @@ pub fn scatter_terrain_details(
                 ..
             } => {
                 if !mesh_transforms.is_empty() {
-                    let colours = vec![*colour; mesh_transforms.len()];
-                    out.mesh_instances.push(make_mesh(
+                    out.meshes.extend(make_meshes(
                         *mesh_id,
                         *mesh_texture_id,
                         mesh_transforms,
-                        colours,
+                        *colour,
                     ));
                 }
                 if !sprite_positions.is_empty() {

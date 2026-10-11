@@ -2,6 +2,8 @@
 
 An `ItemTypePlugin` providing heightmap and splatmap terrain rendering for [viewport-lib](https://github.com/grimandgreedy/viewport-lib).
 
+![A textured Mount Rainier terrain rendered by viewport-lib-terrain](https://raw.githubusercontent.com/grimandgreedy/viewport-lib-terrain/master/assets/terrain.jpg)
+
 ## Why not just a mesh?
 
 You can put a triangulated landscape into viewport-lib as a regular mesh item. It will render. What you give up:

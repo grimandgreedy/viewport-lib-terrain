@@ -11,6 +11,9 @@
 //!
 //! Build the renderer with [`render_format`] so its pipelines match the target.
 
+#[allow(dead_code)]
+pub mod assets;
+
 use eframe::egui;
 use viewport_lib::{FrameData, OffscreenViewportTarget, ViewportRenderer};
 

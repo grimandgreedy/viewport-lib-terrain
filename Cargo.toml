@@ -12,7 +12,7 @@ keywords = ["3d", "terrain", "heightmap", "viewport", "viewport-lib"]
 categories = ["graphics", "rendering", "visualization"]
 rust-version = "1.85"
 publish = true
-exclude = ["examples/"]
+exclude = ["examples/", "assets/"]
 
 [dependencies]
 viewport-lib = { path = "../viewport-lib/crates/viewport-lib", version = "0.22" }
@@ -27,6 +27,8 @@ bytemuck = { version = "1.25", features = ["derive"] }
 eframe = { version = "=0.33.3", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
 egui = "0.33"
 naga = { version = "27", features = ["wgsl-in"] }
+# Decodes the example textures and tree models under examples/assets.
+viewport-lib-io = { version = "0.8", default-features = false, features = ["jpeg", "png", "gltf"] }
 
 [[example]]
 name = "eframe-terrain"

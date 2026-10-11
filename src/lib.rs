@@ -37,7 +37,7 @@ pub use heightfield::TerrainHeightfield;
 pub use item::{
     LAYER_COUNT, LayerTextures, SplatmapData, TerrainCollection, TerrainItem, TerrainLayer,
 };
-pub use plugin::TerrainPlugin;
+pub use plugin::{LodPatchCounts, TerrainPlugin};
 
 /// Stable name used as the
 /// [`SceneFrame::submit_plugin_items`](viewport_lib::renderer::SceneFrame::submit_plugin_items)

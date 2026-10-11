@@ -1,11 +1,10 @@
 //! Terrain item types submitted on `SceneFrame::plugin_items`.
 
-use std::any::Any;
 use std::sync::Arc;
 
-use viewport_lib::{Colour, ColourSpace, ItemSettings, TextureData, TexturePayload};
-use viewport_lib::plugin_api::PluginItemCollection;
-use viewport_lib::renderer::PickId;
+use viewport_lib_types::colour::{Colour, ColourSpace};
+use viewport_lib_types::data::texture::{TextureData, TexturePayload};
+use viewport_lib_types::material::ItemSettings;
 
 use crate::heightfield::TerrainHeightfield;
 
@@ -484,28 +483,6 @@ impl TerrainItem {
 /// Per-frame collection of terrains.
 pub struct TerrainCollection {
     pub items: Vec<TerrainItem>,
-}
-
-impl PluginItemCollection for TerrainCollection {
-    fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    fn item_settings(&self, index: usize) -> &ItemSettings {
-        &self.items[index].settings
-    }
-
-    fn pick_id(&self, index: usize) -> PickId {
-        self.items[index].settings.pick_id
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
 }
 
 #[cfg(test)]

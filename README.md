@@ -40,6 +40,8 @@ The heightmap is a `Vec<u16>`. `TerrainItem::from_u16_le_bytes` builds one from 
 
 Grass and trees can be scattered over the surface with `scatter_terrain_details`. The scattered meshes are ordinary opaque scene items. Distant trees switch to billboards, which only draw if the sprite plugin from `viewport-lib-plugins` is registered.
 
+The plugin and everything that draws sit behind the `gpu` feature, which is on by default. With `default-features = false` the crate builds only the terrain data types (`TerrainItem`, `TerrainLayer`, `SplatmapData`, `LayerTextures`, `TerrainCollection`, `TerrainHeightfield` and the detail layer settings) against viewport-lib-types, with neither viewport-lib nor wgpu in the tree. That is for code that names them without drawing, such as a file loader, a scene format or a physics step. `scripts/check_types_only.sh` checks that build stays free of both.
+
 ## Examples
 
 ```sh

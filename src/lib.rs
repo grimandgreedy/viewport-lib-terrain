@@ -26,17 +26,27 @@
 mod detail;
 mod heightfield;
 mod item;
+
+#[cfg(feature = "gpu")]
+mod collection;
+#[cfg(feature = "gpu")]
+mod detail_scatter;
+#[cfg(feature = "gpu")]
 mod mesh;
+#[cfg(feature = "gpu")]
 mod pick;
+#[cfg(feature = "gpu")]
 mod plugin;
 
-pub use detail::{
-    DetailKind, DetailLayer, DetailScatterOutput, DetailScatterParams, scatter_terrain_details,
-};
+pub use detail::{DetailKind, DetailLayer, DetailScatterParams};
 pub use heightfield::TerrainHeightfield;
 pub use item::{
     LAYER_COUNT, LayerTextures, LayerTexturesError, SplatmapData, TerrainCollection, TerrainItem, TerrainLayer,
 };
+
+#[cfg(feature = "gpu")]
+pub use detail_scatter::{DetailScatterOutput, scatter_terrain_details};
+#[cfg(feature = "gpu")]
 pub use plugin::{LodPatchCounts, TerrainPlugin};
 
 /// Stable name used as the

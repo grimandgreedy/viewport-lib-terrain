@@ -8,7 +8,8 @@
 //! Patches include a skirt: a ring of duplicated perimeter vertices
 //! dropped along -Z. The skirt fills cracks where a high-LOD patch
 //! meets a low-LOD neighbour with a different vertex along their
-//! shared edge.
+//! shared edge. Edges on the terrain's outer border have no neighbour
+//! and get no skirt.
 
 use bytemuck::{Pod, Zeroable};
 
@@ -167,8 +168,16 @@ pub fn build_patch(
         }
         // Build the skirt strip. perimeter[i] -> perimeter[i+1] (top
         // edge) closes with drop_base+i -> drop_base+i+1 (bottom edge).
+        // Sides on the terrain's outer border have no neighbour to
+        // crack against, so they get no skirt. Perimeter order is
+        // bottom, right, top, left, `cells` segments each.
+        let span = (cells * step) as i32;
+        let outer = [oy <= 0, ox + span >= hw - 1, oy + span >= hh - 1, ox <= 0];
         let m = perimeter.len() as u32;
         for i in 0..m {
+            if outer[(i / cells) as usize] {
+                continue;
+            }
             let i_next = (i + 1) % m;
             let t0 = perimeter[i as usize];
             let t1 = perimeter[i_next as usize];

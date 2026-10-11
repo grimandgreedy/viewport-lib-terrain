@@ -141,56 +141,56 @@ impl App {
 
         let layers: [TerrainLayer; LAYER_COUNT] = [
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.26, 0.42, 0.18).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.26, 0.42, 0.18),
                 metallic: 0.0,
                 roughness: 0.92,
                 height_bias: 0.0,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.42, 0.28, 0.16).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.42, 0.28, 0.16),
                 metallic: 0.0,
                 roughness: 0.85,
                 height_bias: 0.0,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.46, 0.44, 0.42).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.46, 0.44, 0.42),
                 metallic: 0.05,
                 roughness: 0.70,
                 height_bias: 0.15,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.82, 0.74, 0.48).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.82, 0.74, 0.48),
                 metallic: 0.0,
                 roughness: 0.80,
                 height_bias: 0.0,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.58, 0.52, 0.44).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.58, 0.52, 0.44),
                 metallic: 0.0,
                 roughness: 0.55,
                 height_bias: 0.55,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.20, 0.34, 0.16).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.20, 0.34, 0.16),
                 metallic: 0.0,
                 roughness: 0.95,
                 height_bias: -0.15,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.94, 0.95, 0.98).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.94, 0.95, 0.98),
                 metallic: 0.0,
                 roughness: 0.45,
                 height_bias: 0.50,
                 ..Default::default()
             },
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.22, 0.20, 0.18).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.22, 0.20, 0.18),
                 metallic: 0.10,
                 roughness: 0.55,
                 height_bias: 0.40,
@@ -252,7 +252,7 @@ impl App {
                 kind: DetailKind::Mesh {
                     mesh_id: self.grass_mesh_id,
                     texture_id: None,
-                    colour: [1.0, 1.0, 1.0, 1.0],
+                    colour: Colour::WHITE,
                 },
                 surface_layer: 0,
                 weight_threshold: 0.35,
@@ -267,7 +267,7 @@ impl App {
                     mesh_id: self.tree_mesh_id,
                     mesh_texture_id: None,
                     impostor_texture_id: Some(self.impostor_texture_id),
-                    colour: [1.0, 1.0, 1.0, 1.0],
+                    colour: Colour::WHITE,
                     switch_distance: self.ui.tree_switch,
                 },
                 surface_layer: 1,

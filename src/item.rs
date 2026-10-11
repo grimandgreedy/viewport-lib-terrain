@@ -3,7 +3,7 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use viewport_lib::ItemSettings;
+use viewport_lib::{Colour, ColourSpace, ItemSettings, TextureData, TexturePayload};
 use viewport_lib::plugin_api::PluginItemCollection;
 use viewport_lib::renderer::PickId;
 
@@ -15,7 +15,8 @@ pub const LAYER_COUNT: usize = 8;
 
 /// One surface layer in a splatmap-blended terrain.
 ///
-/// When `textured` is false the layer shades as a flat `albedo` colour.
+/// When `textured` is false the layer shades as a flat `albedo` colour
+/// (alpha is ignored).
 /// When true it samples slot `i` of the terrain's
 /// [`LayerTextures`](TerrainItem::layer_textures) array, tiled across the
 /// surface by `uv_scale` (world metres per tile) and shifted by
@@ -23,7 +24,7 @@ pub const LAYER_COUNT: usize = 8;
 /// no texture array bound.
 #[derive(Copy, Clone, Debug)]
 pub struct TerrainLayer {
-    pub albedo: [f32; 3],
+    pub albedo: Colour,
     pub metallic: f32,
     pub roughness: f32,
     pub height_bias: f32,
@@ -55,7 +56,7 @@ pub struct TerrainLayer {
 impl Default for TerrainLayer {
     fn default() -> Self {
         Self {
-            albedo: [0.5, 0.5, 0.5],
+            albedo: Colour::linear_rgb(0.5, 0.5, 0.5),
             metallic: 0.0,
             roughness: 0.9,
             height_bias: 0.0,
@@ -71,56 +72,96 @@ impl Default for TerrainLayer {
     }
 }
 
-/// A per-layer texture array (diffuse or normal), packed so every layer
-/// samples from a single binding.
+/// A per-layer texture array (diffuse, normal or mask), packed so every
+/// layer samples from a single binding.
 ///
-/// All layers share `dims`; the buffer holds [`LAYER_COUNT`] slots laid
-/// out one after another, RGBA8. Diffuse arrays hold sRGB colour, normal
-/// arrays hold linear tangent-space vectors: the renderer picks the
-/// texture format per binding. Slots without a source are transparent
-/// black and should be paired with a [`TerrainLayer`] whose matching flag
-/// (`textured` / `normal_mapped`) is false.
+/// Built from [`TextureData`] slots, one per layer, which must all be
+/// RGBA8, the same size and in the same colour space. The colour space
+/// decides how the array is uploaded: sRGB slots (diffuse colour, from
+/// [`TextureData::srgb`]) are decoded to linear on sampling, linear slots
+/// (normal and mask maps, from [`TextureData::normal_map`] or
+/// [`TextureData::linear`]) are read as-is. Slots without a source are
+/// transparent black and should be paired with a [`TerrainLayer`] whose
+/// matching flag (`textured` / `normal_mapped` / `mask_mapped`) is false.
 ///
-/// `rgba` sits behind an [`Arc`] so per-frame clones of the owning
-/// [`TerrainItem`] do not copy the pixels. Bump [`version`](Self::version)
+/// The pixels sit behind an [`Arc`] so per-frame clones of the owning
+/// [`TerrainItem`] do not copy them. Bump [`version`](Self::version)
 /// when the bytes change so the renderer re-uploads.
 #[derive(Clone)]
 pub struct LayerTextures {
     rgba: Arc<[u8]>,
-    /// Per-slot texture resolution (width, height).
-    pub dims: [u32; 2],
-    /// Bumped by the consumer when `rgba` changes.
+    dims: [u32; 2],
+    colour_space: ColourSpace,
+    /// Bumped by the consumer when the pixels change.
     pub version: u64,
 }
 
-impl LayerTextures {
-    /// Assemble from up to [`LAYER_COUNT`] source textures, each an RGBA8
-    /// buffer of `dims[0] * dims[1] * 4` bytes in layer order. Missing or
-    /// trailing slots are filled with transparent black.
-    ///
-    /// Returns `None` if `sources` is empty, holds more than
-    /// [`LAYER_COUNT`] entries, or any buffer has the wrong length.
-    pub fn new(sources: &[Vec<u8>], dims: [u32; 2]) -> Option<Self> {
-        if sources.is_empty() || sources.len() > LAYER_COUNT {
-            return None;
+/// Why [`LayerTextures::new`] rejected its sources.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LayerTexturesError {
+    /// No sources were given.
+    Empty,
+    /// More than [`LAYER_COUNT`] sources were given.
+    TooMany(usize),
+    /// The slot is not an 8-bit RGBA image.
+    NotRgba8 { slot: usize },
+    /// The slot's size differs from slot 0's, or its payload length does
+    /// not match its size.
+    SizeMismatch { slot: usize },
+    /// The slot's colour space differs from slot 0's.
+    ColourSpaceMismatch { slot: usize },
+}
+
+impl std::fmt::Display for LayerTexturesError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => write!(f, "no layer textures given"),
+            Self::TooMany(n) => write!(f, "{n} layer textures given, at most {LAYER_COUNT} allowed"),
+            Self::NotRgba8 { slot } => write!(f, "layer texture {slot} is not RGBA8"),
+            Self::SizeMismatch { slot } => {
+                write!(f, "layer texture {slot} is not the same size as layer texture 0")
+            }
+            Self::ColourSpaceMismatch { slot } => {
+                write!(f, "layer texture {slot} is not in the same colour space as layer texture 0")
+            }
         }
+    }
+}
+
+impl std::error::Error for LayerTexturesError {}
+
+impl LayerTextures {
+    /// Assemble from up to [`LAYER_COUNT`] textures in layer order.
+    /// Trailing slots are filled with transparent black.
+    pub fn new(sources: &[TextureData]) -> Result<Self, LayerTexturesError> {
+        let first = sources.first().ok_or(LayerTexturesError::Empty)?;
+        if sources.len() > LAYER_COUNT {
+            return Err(LayerTexturesError::TooMany(sources.len()));
+        }
+        let dims = [first.width(), first.height()];
+        let colour_space = first.colour_space();
         let slot_len = (dims[0] as usize) * (dims[1] as usize) * 4;
         if slot_len == 0 {
-            return None;
-        }
-        for buf in sources {
-            if buf.len() != slot_len {
-                return None;
-            }
+            return Err(LayerTexturesError::SizeMismatch { slot: 0 });
         }
         let mut rgba = vec![0u8; slot_len * LAYER_COUNT];
         for (slot, src) in sources.iter().enumerate() {
+            let TexturePayload::Rgba8(bytes) = src.payload() else {
+                return Err(LayerTexturesError::NotRgba8 { slot });
+            };
+            if [src.width(), src.height()] != dims || bytes.len() != slot_len {
+                return Err(LayerTexturesError::SizeMismatch { slot });
+            }
+            if src.colour_space() != colour_space {
+                return Err(LayerTexturesError::ColourSpaceMismatch { slot });
+            }
             let start = slot * slot_len;
-            rgba[start..start + slot_len].copy_from_slice(src);
+            rgba[start..start + slot_len].copy_from_slice(bytes);
         }
-        Some(Self {
+        Ok(Self {
             rgba: Arc::from(rgba.into_boxed_slice()),
             dims,
+            colour_space,
             version: 0,
         })
     }
@@ -129,6 +170,16 @@ impl LayerTextures {
     /// `dims[0] * dims[1] * 4` each.
     pub fn rgba(&self) -> &[u8] {
         &self.rgba
+    }
+
+    /// Per-slot texture resolution (width, height).
+    pub fn dims(&self) -> [u32; 2] {
+        self.dims
+    }
+
+    /// The colour space every slot is in.
+    pub fn colour_space(&self) -> ColourSpace {
+        self.colour_space
     }
 }
 
@@ -531,7 +582,7 @@ mod tests {
     fn set_layers_from_descriptors_pads_with_default() {
         let mut item = TerrainItem::new(vec![0; 1], [1, 1]);
         let custom = TerrainLayer {
-            albedo: [0.1, 0.2, 0.3],
+            albedo: Colour::linear_rgb(0.1, 0.2, 0.3),
             metallic: 0.5,
             roughness: 0.4,
             height_bias: 0.7,
@@ -545,7 +596,7 @@ mod tests {
             uv_offset: [0.0, 0.0],
         };
         item.set_layers_from_descriptors(&[custom]);
-        assert_eq!(item.surface_layers[0].albedo, [0.1, 0.2, 0.3]);
+        assert_eq!(item.surface_layers[0].albedo, Colour::linear_rgb(0.1, 0.2, 0.3));
         assert!(item.surface_layers[0].textured);
         let default = TerrainLayer::default();
         assert_eq!(item.surface_layers[1].albedo, default.albedo);
@@ -555,14 +606,18 @@ mod tests {
 
     #[test]
     fn layer_textures_pack_slots_in_order() {
-        let dims = [2u32, 2u32];
         let slot_len = 2 * 2 * 4;
         let red = vec![255u8; slot_len];
         let green: Vec<u8> = (0..slot_len)
             .map(|i| if i % 4 == 1 { 255 } else { 0 })
             .collect();
-        let tex = LayerTextures::new(&[red.clone(), green.clone()], dims).expect("pack");
-        assert_eq!(tex.dims, dims);
+        let tex = LayerTextures::new(&[
+            TextureData::srgb(2, 2, red.clone()),
+            TextureData::srgb(2, 2, green.clone()),
+        ])
+        .expect("pack");
+        assert_eq!(tex.dims(), [2, 2]);
+        assert_eq!(tex.colour_space(), ColourSpace::Srgb);
         let packed = tex.rgba();
         assert_eq!(packed.len(), slot_len * LAYER_COUNT);
         assert_eq!(&packed[..slot_len], red.as_slice());
@@ -573,11 +628,24 @@ mod tests {
 
     #[test]
     fn layer_textures_reject_bad_input() {
-        let dims = [2u32, 2u32];
-        assert!(LayerTextures::new(&[], dims).is_none());
-        assert!(LayerTextures::new(&[vec![0u8; 3]], dims).is_none());
-        let ok = vec![0u8; 16];
-        let too_many = vec![ok.clone(); LAYER_COUNT + 1];
-        assert!(LayerTextures::new(&too_many, dims).is_none());
+        let ok = || TextureData::srgb(2, 2, vec![0u8; 16]);
+        assert_eq!(LayerTextures::new(&[]).err(), Some(LayerTexturesError::Empty));
+        assert_eq!(
+            LayerTextures::new(&[ok(), TextureData::srgb(2, 2, vec![0u8; 3])]).err(),
+            Some(LayerTexturesError::SizeMismatch { slot: 1 })
+        );
+        assert_eq!(
+            LayerTextures::new(&[ok(), TextureData::srgb(1, 1, vec![0u8; 4])]).err(),
+            Some(LayerTexturesError::SizeMismatch { slot: 1 })
+        );
+        assert_eq!(
+            LayerTextures::new(&[ok(), TextureData::linear(2, 2, vec![0u8; 16])]).err(),
+            Some(LayerTexturesError::ColourSpaceMismatch { slot: 1 })
+        );
+        let too_many: Vec<_> = (0..=LAYER_COUNT).map(|_| ok()).collect();
+        assert_eq!(
+            LayerTextures::new(&too_many).err(),
+            Some(LayerTexturesError::TooMany(LAYER_COUNT + 1))
+        );
     }
 }

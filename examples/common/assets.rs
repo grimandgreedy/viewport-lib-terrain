@@ -174,12 +174,12 @@ pub fn load_ground() -> GroundTextures {
             m[i * 4 + 3] = smoothness;
         }
 
-        diffuse.push(colour.rgba);
-        normal.push(nor.rgba);
-        mask.push(m);
+        diffuse.push(TextureData::srgb(size[0], size[1], colour.rgba));
+        normal.push(TextureData::normal_map(size[0], size[1], nor.rgba));
+        mask.push(TextureData::linear(size[0], size[1], m));
     }
 
-    let pack = |v: &[Vec<u8>]| LayerTextures::new(v, size).expect("layer textures");
+    let pack = |v: &[TextureData]| LayerTextures::new(v).expect("layer textures");
     GroundTextures { diffuse: pack(&diffuse), normal: pack(&normal), mask: pack(&mask) }
 }
 

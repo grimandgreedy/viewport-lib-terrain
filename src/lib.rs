@@ -35,7 +35,7 @@ pub use detail::{
 };
 pub use heightfield::TerrainHeightfield;
 pub use item::{
-    LAYER_COUNT, LayerTextures, SplatmapData, TerrainCollection, TerrainItem, TerrainLayer,
+    LAYER_COUNT, LayerTextures, LayerTexturesError, SplatmapData, TerrainCollection, TerrainItem, TerrainLayer,
 };
 pub use plugin::{LodPatchCounts, TerrainPlugin};
 

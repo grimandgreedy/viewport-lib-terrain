@@ -512,7 +512,7 @@ impl eframe::App for App {
 /// so the other layers are present but unused.
 fn make_layers() -> [TerrainLayer; LAYER_COUNT] {
     let neutral = TerrainLayer {
-        albedo: Colour::srgb_rgb(0.5, 0.5, 0.5).to_linear_rgb(),
+        albedo: Colour::srgb_rgb(0.5, 0.5, 0.5),
         metallic: 0.0,
         roughness: 0.85,
         height_bias: 0.0,
@@ -520,7 +520,7 @@ fn make_layers() -> [TerrainLayer; LAYER_COUNT] {
     };
     let mut layers = [neutral; LAYER_COUNT];
     layers[0] = TerrainLayer {
-        albedo: Colour::srgb_rgb(0.32, 0.50, 0.22).to_linear_rgb(),
+        albedo: Colour::srgb_rgb(0.32, 0.50, 0.22),
         metallic: 0.0,
         roughness: 0.90,
         height_bias: 0.0,

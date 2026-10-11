@@ -123,20 +123,29 @@ struct SplatSig {
 struct LayerTexSig {
     present: bool,
     dims: [u32; 2],
+    colour_space: viewport_lib::ColourSpace,
     version: u64,
 }
 
 impl LayerTexSig {
+    /// Whether `other` fits the texture built for `self`: same size and
+    /// format, so a re-upload is enough.
+    fn same_texture(&self, other: &Self) -> bool {
+        self.dims == other.dims && self.colour_space == other.colour_space
+    }
+
     fn of(textures: Option<&crate::item::LayerTextures>) -> Self {
         match textures {
             Some(t) => Self {
                 present: true,
-                dims: t.dims,
+                dims: t.dims(),
+                colour_space: t.colour_space(),
                 version: t.version,
             },
             None => Self {
                 present: false,
                 dims: [1, 1],
+                colour_space: viewport_lib::ColourSpace::Linear,
                 version: 0,
             },
         }
@@ -644,7 +653,7 @@ impl ItemTypePlugin for TerrainPlugin {
                     &item.splatmaps[1].dims,
                 );
                 let layer_tex =
-                    create_layer_array_texture(device, &tex_sig.dims, LayerArrayKind::Albedo);
+                    create_layer_array_texture(device, &tex_sig, LayerArrayKind::Albedo);
                 upload_layer_array(
                     queue,
                     &layer_tex,
@@ -652,7 +661,7 @@ impl ItemTypePlugin for TerrainPlugin {
                     &tex_sig.dims,
                 );
                 let normal_tex =
-                    create_layer_array_texture(device, &norm_sig.dims, LayerArrayKind::Normal);
+                    create_layer_array_texture(device, &norm_sig, LayerArrayKind::Normal);
                 upload_layer_array(
                     queue,
                     &normal_tex,
@@ -660,7 +669,7 @@ impl ItemTypePlugin for TerrainPlugin {
                     &norm_sig.dims,
                 );
                 let mask_tex =
-                    create_layer_array_texture(device, &mask_sig.dims, LayerArrayKind::Mask);
+                    create_layer_array_texture(device, &mask_sig, LayerArrayKind::Mask);
                 upload_layer_array(
                     queue,
                     &mask_tex,
@@ -741,10 +750,10 @@ impl ItemTypePlugin for TerrainPlugin {
                 }
 
                 if needs_tex_reupload {
-                    if entry.tex_sig.dims != tex_sig.dims {
+                    if !entry.tex_sig.same_texture(&tex_sig) {
                         entry.layer_tex = create_layer_array_texture(
                             device,
-                            &tex_sig.dims,
+                            &tex_sig,
                             LayerArrayKind::Albedo,
                         );
                         rebind = true;
@@ -759,10 +768,10 @@ impl ItemTypePlugin for TerrainPlugin {
                 }
 
                 if needs_norm_reupload {
-                    if entry.norm_sig.dims != norm_sig.dims {
+                    if !entry.norm_sig.same_texture(&norm_sig) {
                         entry.normal_tex = create_layer_array_texture(
                             device,
-                            &norm_sig.dims,
+                            &norm_sig,
                             LayerArrayKind::Normal,
                         );
                         rebind = true;
@@ -777,10 +786,10 @@ impl ItemTypePlugin for TerrainPlugin {
                 }
 
                 if needs_mask_reupload {
-                    if entry.mask_sig.dims != mask_sig.dims {
+                    if !entry.mask_sig.same_texture(&mask_sig) {
                         entry.mask_tex = create_layer_array_texture(
                             device,
-                            &mask_sig.dims,
+                            &mask_sig,
                             LayerArrayKind::Mask,
                         );
                         rebind = true;
@@ -1080,7 +1089,7 @@ impl ItemTypePlugin for TerrainPlugin {
 
 fn layer_uniform(layer: &crate::item::TerrainLayer) -> LayerUniform {
     LayerUniform {
-        albedo: layer.albedo,
+        albedo: layer.albedo.to_linear_rgb(),
         metallic: layer.metallic,
         roughness: layer.roughness,
         height_bias: layer.height_bias,
@@ -1240,8 +1249,7 @@ fn create_splatmap_texture(device: &wgpu::Device, dims: &[u32; 2]) -> wgpu::Text
     })
 }
 
-/// Which per-layer array is being built. Diffuse holds sRGB colour;
-/// normal holds linear tangent-space vectors.
+/// Which per-layer array is being built; names the texture.
 #[derive(Copy, Clone)]
 enum LayerArrayKind {
     Albedo,
@@ -1257,20 +1265,25 @@ fn mip_count(w: u32, h: u32) -> u32 {
 }
 
 /// Create a per-layer texture array: one RGBA slice per surface layer at
-/// `dims`, with a full mip chain. Diffuse arrays are sRGB, normal and
-/// mask arrays are linear.
+/// the signature's size, with a full mip chain. The format follows the
+/// textures' colour space: sRGB slots decode on sampling, linear slots
+/// are read as-is.
 fn create_layer_array_texture(
     device: &wgpu::Device,
-    dims: &[u32; 2],
+    sig: &LayerTexSig,
     kind: LayerArrayKind,
 ) -> wgpu::Texture {
-    let (label, format) = match kind {
-        LayerArrayKind::Albedo => ("terrain_layer_array", wgpu::TextureFormat::Rgba8UnormSrgb),
-        LayerArrayKind::Normal => ("terrain_normal_array", wgpu::TextureFormat::Rgba8Unorm),
-        LayerArrayKind::Mask => ("terrain_mask_array", wgpu::TextureFormat::Rgba8Unorm),
+    let label = match kind {
+        LayerArrayKind::Albedo => "terrain_layer_array",
+        LayerArrayKind::Normal => "terrain_normal_array",
+        LayerArrayKind::Mask => "terrain_mask_array",
     };
-    let w = dims[0].max(1);
-    let h = dims[1].max(1);
+    let format = match sig.colour_space {
+        viewport_lib::ColourSpace::Srgb => wgpu::TextureFormat::Rgba8UnormSrgb,
+        viewport_lib::ColourSpace::Linear => wgpu::TextureFormat::Rgba8Unorm,
+    };
+    let w = sig.dims[0].max(1);
+    let h = sig.dims[1].max(1);
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
         size: wgpu::Extent3d {

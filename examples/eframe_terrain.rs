@@ -71,7 +71,7 @@ impl App {
         let layers: [TerrainLayer; LAYER_COUNT] = [
             // A.r: grass
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.30, 0.46, 0.20).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.30, 0.46, 0.20),
                 metallic: 0.0,
                 roughness: 0.92,
                 height_bias: 0.0,
@@ -79,7 +79,7 @@ impl App {
             },
             // A.g: dirt
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.40, 0.27, 0.16).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.40, 0.27, 0.16),
                 metallic: 0.0,
                 roughness: 0.85,
                 height_bias: 0.0,
@@ -87,7 +87,7 @@ impl App {
             },
             // A.b: rock
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.42, 0.40, 0.38).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.42, 0.40, 0.38),
                 metallic: 0.05,
                 roughness: 0.70,
                 height_bias: 0.15,
@@ -95,7 +95,7 @@ impl App {
             },
             // A.a: sand
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.78, 0.70, 0.46).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.78, 0.70, 0.46),
                 metallic: 0.0,
                 roughness: 0.78,
                 height_bias: 0.0,
@@ -103,7 +103,7 @@ impl App {
             },
             // B.r: pebbles (height-blends over sand and dirt)
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.55, 0.50, 0.42).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.55, 0.50, 0.42),
                 metallic: 0.0,
                 roughness: 0.60,
                 height_bias: 0.55,
@@ -111,7 +111,7 @@ impl App {
             },
             // B.g: moss (sneaks over grass at low spots)
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.18, 0.32, 0.16).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.18, 0.32, 0.16),
                 metallic: 0.0,
                 roughness: 0.95,
                 height_bias: -0.15,
@@ -119,7 +119,7 @@ impl App {
             },
             // B.b: snow (sits high)
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.92, 0.94, 0.97).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.92, 0.94, 0.97),
                 metallic: 0.0,
                 roughness: 0.50,
                 height_bias: 0.30,
@@ -127,7 +127,7 @@ impl App {
             },
             // B.a: dark rock vein (slightly raised over base rock)
             TerrainLayer {
-                albedo: Colour::srgb_rgb(0.22, 0.20, 0.18).to_linear_rgb(),
+                albedo: Colour::srgb_rgb(0.22, 0.20, 0.18),
                 metallic: 0.10,
                 roughness: 0.55,
                 height_bias: 0.40,

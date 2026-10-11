@@ -17,7 +17,7 @@
 //! [`DetailScatterParams::camera_xy`]; samples outside the footprint
 //! are skipped without per-sample work.
 
-use viewport_lib::{Material, MeshId, SceneRenderItem, SpriteBlend, TextureId};
+use viewport_lib::{Colour, Material, MeshId, SceneRenderItem, SpriteBlend, TextureId};
 use viewport_lib_plugins::item_types::sprite::{SpriteItem, SpriteSizeMode};
 
 use crate::TerrainItem;
@@ -31,13 +31,13 @@ pub enum DetailKind {
         /// `None` renders a solid-coloured quad.
         texture_id: Option<TextureId>,
         /// RGBA tint applied to every instance.
-        colour: [f32; 4],
+        colour: Colour,
     },
     /// Mesh. One opaque scene item per placed instance.
     Mesh {
         mesh_id: MeshId,
         texture_id: Option<TextureId>,
-        colour: [f32; 4],
+        colour: Colour,
     },
     /// Tree-style LOD: full mesh under [`TreeLod::switch_distance`],
     /// camera-facing impostor billboard beyond. One mesh batch + one
@@ -46,7 +46,7 @@ pub enum DetailKind {
         mesh_id: MeshId,
         mesh_texture_id: Option<TextureId>,
         impostor_texture_id: Option<TextureId>,
-        colour: [f32; 4],
+        colour: Colour,
         /// Distance from camera at which the renderer switches the
         /// individual tree from mesh to impostor.
         switch_distance: f32,
@@ -286,7 +286,7 @@ pub fn scatter_terrain_details(
         }
 
         let make_sprite = |tex: Option<TextureId>,
-                           colour: [f32; 4],
+                           colour: Colour,
                            positions: Vec<[f32; 3]>,
                            sizes: Vec<f32>|
          -> SpriteItem {
@@ -294,7 +294,7 @@ pub fn scatter_terrain_details(
             s.texture_id = tex;
             s.positions = positions;
             s.sizes = sizes;
-            s.default_colour = viewport_lib::Colour::from_linear_array(colour);
+            s.default_colour = colour;
             s.default_size = layer.size;
             s.size_mode = SpriteSizeMode::WorldSpace;
             // A textured sprite has transparent texels, which must not write depth.
@@ -305,9 +305,9 @@ pub fn scatter_terrain_details(
         let make_meshes = |mesh_id: MeshId,
                            tex: Option<TextureId>,
                            transforms: Vec<[[f32; 4]; 4]>,
-                           colour: [f32; 4]|
+                           colour: Colour|
          -> Vec<SceneRenderItem> {
-            let mut material = Material::from_colour(viewport_lib::Colour::from_linear_array(colour));
+            let mut material = Material::from_colour(colour);
             material.texture_id = tex;
             material.metallic = 0.0;
             material.roughness = 0.9;

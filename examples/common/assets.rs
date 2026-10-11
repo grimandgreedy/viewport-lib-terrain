@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use viewport_lib::{MeshData, TextureData};
+use viewport_lib::{MeshData, TextureData, TexturePayload};
 use viewport_lib_terrain::{LAYER_COUNT, LayerTextures, TerrainItem};
 
 /// Root of the asset directory.
@@ -100,9 +100,23 @@ pub const GROUND: [Ground; LAYER_COUNT] = [
     Ground { dir: "Rock030", source: Source::AmbientCg, tile_metres: 6.0, normal_scale: 1.2 },
 ];
 
-fn decode_jpeg(path: &Path) -> viewport_lib_io::RasterImageData {
-    viewport_lib_io::loaders::jpeg::texture_from_path(path)
-        .unwrap_or_else(|e| panic!("decode {}: {e:?}", path.display()))
+/// Decoded 8-bit RGBA pixels, kept as bytes so the mask channels can be
+/// repacked.
+#[derive(Clone)]
+struct Rgba {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+}
+
+fn decode_jpeg(path: &Path) -> Rgba {
+    let tex = viewport_lib_io::loaders::jpeg::texture_from_path(path)
+        .unwrap_or_else(|e| panic!("decode {}: {e:?}", path.display()));
+    let (width, height) = (tex.width(), tex.height());
+    match tex.into_payload() {
+        TexturePayload::Rgba8(rgba) => Rgba { width, height, rgba },
+        _ => panic!("{} did not decode to 8-bit RGBA", path.display()),
+    }
 }
 
 /// The diffuse, normal and mask arrays for all eight layers.
@@ -266,7 +280,7 @@ pub fn load_kenney_model(name: &str) -> Model {
             }
             None => uvs.extend(std::iter::repeat([0.0, 0.0]).take(n)),
         }
-        match &part.mesh.colours {
+        match &part.mesh.vertex_colours {
             Some(c) => {
                 any_colours = true;
                 colours.extend_from_slice(c);
@@ -294,7 +308,7 @@ pub fn load_kenney_model(name: &str) -> Model {
                 .and_then(|i| scene.materials.get(i))
                 .and_then(|mat| mat.base_color_texture.as_ref());
             if let Some(viewport_lib_io::TextureSource::Decoded(img)) = tex {
-                texture = Some(TextureData::srgb(img.width, img.height, img.rgba.clone()));
+                texture = Some(img.clone());
             }
         }
     }

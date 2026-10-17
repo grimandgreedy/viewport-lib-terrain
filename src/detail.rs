@@ -18,7 +18,7 @@
 //! are skipped without per-sample work.
 
 use viewport_lib_types::colour::Colour;
-use viewport_lib_types::ids::{MeshId, TextureId};
+use viewport_lib_types::ids::{MaterialId, MeshId, TextureId};
 
 /// What a [`DetailLayer`] emits per scatter point.
 #[derive(Clone)]
@@ -34,7 +34,9 @@ pub enum DetailKind {
     /// Mesh. One opaque scene item per placed instance.
     Mesh {
         mesh_id: MeshId,
-        texture_id: Option<TextureId>,
+        /// Material from `upload_material`. Every instance shares it.
+        material: MaterialId,
+        /// Replaces the material's base colour on each instance.
         colour: Colour,
     },
     /// Tree-style LOD: full mesh under [`TreeLod::switch_distance`],
@@ -42,7 +44,8 @@ pub enum DetailKind {
     /// sprite batch per layer.
     TreeLod {
         mesh_id: MeshId,
-        mesh_texture_id: Option<TextureId>,
+        /// Material from `upload_material` for the full mesh.
+        mesh_material: MaterialId,
         impostor_texture_id: Option<TextureId>,
         colour: Colour,
         /// Distance from camera at which the renderer switches the

@@ -1,7 +1,7 @@
 //! Scattering detail layers into this frame's sprites and mesh items. Needs
 //! the `gpu` feature, since the output is the renderer's item types.
 
-use viewport_lib::{Colour, Material, MeshId, SceneRenderItem, SpriteBlend, TextureId};
+use viewport_lib::{Colour, MaterialId, MeshId, SceneRenderItem, SpriteBlend, TextureId};
 use viewport_lib_plugins::item_types::sprite::{SpriteItem, SpriteSizeMode};
 
 use crate::TerrainItem;
@@ -222,21 +222,16 @@ pub fn scatter_terrain_details(
             s
         };
         let make_meshes = |mesh_id: MeshId,
-                           tex: Option<TextureId>,
+                           material: MaterialId,
                            transforms: Vec<[[f32; 4]; 4]>,
                            colour: Colour|
          -> Vec<SceneRenderItem> {
-            let mut material = Material::from_colour(colour);
-            material.texture_id = tex;
-            material.metallic = 0.0;
-            material.roughness = 0.9;
             transforms
                 .into_iter()
                 .map(|model| {
-                    let mut item = SceneRenderItem::default();
-                    item.mesh_id = mesh_id;
+                    let mut item = SceneRenderItem::new(mesh_id, material);
                     item.model = model;
-                    item.material = material.clone();
+                    item.settings.colour = Some(colour);
                     item
                 })
                 .collect()
@@ -253,11 +248,11 @@ pub fn scatter_terrain_details(
                     ));
                 }
             }
-            DetailKind::Mesh { mesh_id, texture_id, colour } => {
+            DetailKind::Mesh { mesh_id, material, colour } => {
                 if !mesh_transforms.is_empty() {
                     out.meshes.extend(make_meshes(
                         *mesh_id,
-                        *texture_id,
+                        *material,
                         mesh_transforms,
                         *colour,
                     ));
@@ -265,7 +260,7 @@ pub fn scatter_terrain_details(
             }
             DetailKind::TreeLod {
                 mesh_id,
-                mesh_texture_id,
+                mesh_material,
                 impostor_texture_id,
                 colour,
                 ..
@@ -273,7 +268,7 @@ pub fn scatter_terrain_details(
                 if !mesh_transforms.is_empty() {
                     out.meshes.extend(make_meshes(
                         *mesh_id,
-                        *mesh_texture_id,
+                        *mesh_material,
                         mesh_transforms,
                         *colour,
                     ));

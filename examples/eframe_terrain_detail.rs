@@ -18,7 +18,7 @@
 
 mod common;
 
-use viewport_lib::Colour;
+use viewport_lib::{Colour, Material, MaterialId};
 use eframe::egui;
 use viewport_lib::{
     ButtonState, Camera, CameraFrame, FrameData, ItemSettings, LightingSettings, MeshId,
@@ -89,8 +89,16 @@ fn main() -> eframe::Result {
                 .upload_texture(device, queue, common::assets::pine_impostor())
                 .expect("upload tree impostor");
 
+            let mut foliage = Material::default();
+            foliage.metallic = 0.0;
+            foliage.roughness = 0.9;
+            let foliage_material = renderer
+                .resources_mut()
+                .upload_material(foliage)
+                .expect("upload foliage material");
+
             rs.renderer.write().callback_resources.insert(renderer);
-            Ok(Box::new(App::new(tree_id, grass_id, impostor)))
+            Ok(Box::new(App::new(tree_id, grass_id, impostor, foliage_material)))
         }),
     )
 }
@@ -118,13 +126,19 @@ struct App {
     tree_mesh_id: MeshId,
     grass_mesh_id: MeshId,
     impostor_texture_id: TextureId,
+    foliage_material: MaterialId,
     detail_out: DetailScatterOutput,
     scene_generation: u64,
     ui: DetailUi,
 }
 
 impl App {
-    fn new(tree_mesh_id: MeshId, grass_mesh_id: MeshId, impostor_texture_id: TextureId) -> Self {
+    fn new(
+        tree_mesh_id: MeshId,
+        grass_mesh_id: MeshId,
+        impostor_texture_id: TextureId,
+        foliage_material: MaterialId,
+    ) -> Self {
         let dim = TERRAIN_DIM as usize;
         let heightmap = common::assets::rainier_heightmap(TERRAIN_DIM);
         let splatmap_dim = SPLATMAP_DIM as usize;
@@ -231,6 +245,7 @@ impl App {
             tree_mesh_id,
             grass_mesh_id,
             impostor_texture_id,
+            foliage_material,
             detail_out: DetailScatterOutput::default(),
             scene_generation: 0,
             ui: DetailUi {
@@ -251,7 +266,7 @@ impl App {
             DetailLayer {
                 kind: DetailKind::Mesh {
                     mesh_id: self.grass_mesh_id,
-                    texture_id: None,
+                    material: self.foliage_material,
                     colour: Colour::WHITE,
                 },
                 surface_layer: 0,
@@ -265,7 +280,7 @@ impl App {
             DetailLayer {
                 kind: DetailKind::TreeLod {
                     mesh_id: self.tree_mesh_id,
-                    mesh_texture_id: None,
+                    mesh_material: self.foliage_material,
                     impostor_texture_id: Some(self.impostor_texture_id),
                     colour: Colour::WHITE,
                     switch_distance: self.ui.tree_switch,

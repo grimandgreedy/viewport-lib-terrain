@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use bytemuck::{Pod, Zeroable};
 use viewport_lib::plugin_api::{
     ItemCollections, ItemFrameContext, ItemTypePlugin, OutlineMaskContext, PaintContext,
-    PickPassContext, PickRay, RectPickContext, SharedBindings, pick_helpers, shared_wgsl,
+    PickPassContext, PickRay, PluginResources, RectPickContext, pick_helpers, shared_wgsl,
 };
 use viewport_lib::renderer::PickId;
 use viewport_lib::resources::{
@@ -319,7 +319,7 @@ impl ItemTypePlugin for TerrainPlugin {
         crate::TYPE_NAME
     }
 
-    fn init_gpu(&mut self, device: &wgpu::Device, shared: &SharedBindings<'_>) {
+    fn init_gpu(&mut self, device: &wgpu::Device, resources: &dyn PluginResources) {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("terrain_shader"),
             source: wgpu::ShaderSource::Wgsl(build_shader_source().into()),
@@ -405,7 +405,7 @@ impl ItemTypePlugin for TerrainPlugin {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("terrain_pipeline_layout"),
-            bind_group_layouts: &[shared.group0_layout, &object_bgl],
+            bind_group_layouts: &[resources.group0_layout(), &object_bgl],
             push_constant_ranges: &[],
         });
 

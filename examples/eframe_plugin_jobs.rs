@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 use viewport_lib::plugin_api::{
-    ItemFrameContext, ItemTypePlugin, PluginItemCollection, SharedBindings,
+    ItemFrameContext, ItemTypePlugin, PluginItemCollection, PluginResources,
 };
 use viewport_lib::scene::material::ItemSettings;
 use viewport_lib::{
@@ -166,7 +166,7 @@ impl ItemTypePlugin for HeightGenPlugin {
         "demo:height_gen"
     }
 
-    fn init_gpu(&mut self, _device: &wgpu::Device, _shared: &SharedBindings<'_>) {
+    fn init_gpu(&mut self, _device: &wgpu::Device, _resources: &dyn PluginResources) {
         // No GPU state. The plugin only does CPU work via ctx.jobs.
     }
 

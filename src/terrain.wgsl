@@ -1,5 +1,6 @@
 // Terrain vertex + fragment entries. Concatenated with viewport-lib's
-// SHARED_BINDINGS_WGSL, SHARED_PBR_WGSL, and SHARED_MASK_WGSL at runtime.
+// SHARED_BINDINGS_WGSL, SHARED_PBR_WGSL, SHARED_MASK_WGSL, SHARED_PICK_WGSL and
+// SHARED_SCENE_FRAGMENT_WGSL at runtime.
 
 struct TerrainLayer {
     albedo:         vec3<f32>,
@@ -81,11 +82,12 @@ fn value_noise(p: vec2<f32>) -> f32 {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-@fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    if !viewport_clip_test(in.world_pos) { discard; }
+fn shade(in: VsOut) -> vec4<f32> {
 
     let view_dir = normalize(camera.eye_pos - in.world_pos);
+    // The layers tile in world coordinates, so they stay put when the
+    // renderer's origin moves.
+    let abs_pos = viewport_absolute_pos(in.world_pos);
 
     // Sample both splatmaps into eight per-layer weights.
     let s0 = textureSample(splatmap_a_tex, splatmap_samp, in.uv);
@@ -146,7 +148,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // by the layer's flag. uv_scale is clamped so an untextured
         // layer (scale 0) cannot produce a non-finite coordinate.
         let scale     = max(l.uv_scale, vec2<f32>(1e-4, 1e-4));
-        let layer_uv  = in.world_pos.xy / scale + l.uv_offset;
+        let layer_uv  = abs_pos.xy / scale + l.uv_offset;
         let sampled   = textureSample(albedo_array, albedo_samp, layer_uv, i).rgb;
         let layer_col = mix(l.albedo, sampled, l.textured);
         albedo = albedo + layer_col * w[i];
@@ -195,7 +197,41 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     inputs.emissive  = vec3<f32>(0.0);
 
     let lit = viewport_pbr_shade(inputs);
+    let indirect = terrain_ambient(inputs);
+    scene_light_split(indirect, max(lit - indirect, vec3<f32>(0.0)), vec3<f32>(0.0));
     return vec4<f32>(lit, 1.0);
+}
+
+// The ambient term `viewport_pbr_shade` adds: the environment when image-based
+// lighting is on, otherwise the hemisphere fill. Used only to split the lit
+// colour into its indirect and direct shares.
+fn terrain_ambient(inp: PbrInputs) -> vec3<f32> {
+    let n = normalize(inp.world_n);
+    if lights.ibl_enabled != 0u {
+        let v = normalize(inp.view_dir);
+        let roughness = viewport_specular_aa_roughness(n, max(inp.roughness, 0.04));
+        let f0 = mix(vec3<f32>(0.04), inp.albedo, inp.metallic);
+        return viewport_ibl_ambient(n, v, inp.albedo, inp.metallic, roughness, f0, inp.ao);
+    }
+    let up_weight = clamp(n.z * 0.5 + 0.5, 0.0, 1.0);
+    var occ = vec3<f32>(inp.ao);
+    if (lights.ao_flags & 1u) != 0u {
+        occ = viewport_brdf_multi_bounce_ao(inp.ao, inp.albedo * (1.0 - inp.metallic));
+    }
+    return mix(lights.ground_colour, lights.sky_colour, up_weight)
+        * (lights.hemisphere_intensity * camera.exposure) * inp.albedo * occ;
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    if !viewport_clip_test(in.world_pos) { discard; }
+    return shade(in);
+}
+
+@fragment
+fn fs_scene(in: VsOut) -> SceneFragment {
+    if !viewport_clip_test(in.world_pos) { discard; }
+    return scene_fragment(shade(in));
 }
 
 // Outline-mask vertex stage. Fragment uses viewport_mask_fs from

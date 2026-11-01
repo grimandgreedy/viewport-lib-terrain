@@ -60,9 +60,7 @@ fn sample_heightmap(item: &TerrainItem, u: f32, v: f32) -> f32 {
     let tx = fx - x0 as f32;
     let ty = fy - y0 as f32;
     let stride = item.dims[0] as usize;
-    let s = |x: usize, y: usize| -> f32 {
-        item.heightmap[y * stride + x] as f32 * (1.0 / 65535.0)
-    };
+    let s = |x: usize, y: usize| -> f32 { item.heightmap[y * stride + x] as f32 * (1.0 / 65535.0) };
     let h00 = s(x0, y0);
     let h10 = s(x1, y0);
     let h01 = s(x0, y1);
@@ -90,7 +88,11 @@ fn sample_splat_weight(item: &TerrainItem, u: f32, v: f32, layer: usize) -> f32 
     let y = (fy as usize).min(h - 1);
     let rgba = map.rgba();
     let p = (y * w + x) * 4 + chan;
-    if p >= rgba.len() { 0.0 } else { rgba[p] as f32 / 255.0 }
+    if p >= rgba.len() {
+        0.0
+    } else {
+        rgba[p] as f32 / 255.0
+    }
 }
 
 /// Build per-frame sprite/mesh batches for the given detail layers.
@@ -180,7 +182,9 @@ pub fn scatter_terrain_details(
                     );
                     mesh_transforms.push(m.to_cols_array_2d());
                 }
-                DetailKind::TreeLod { switch_distance, .. } => {
+                DetailKind::TreeLod {
+                    switch_distance, ..
+                } => {
                     let dx = pos.x - params.camera_xy.x;
                     let dy = pos.y - params.camera_xy.y;
                     let dz = pos.z - params.camera_z;
@@ -230,7 +234,7 @@ pub fn scatter_terrain_details(
                 .into_iter()
                 .map(|model| {
                     let mut item = SceneRenderItem::new(mesh_id, material);
-                    item.model = model;
+                    item.model = model.into();
                     item.settings.colour = Some(colour);
                     item
                 })
@@ -248,14 +252,14 @@ pub fn scatter_terrain_details(
                     ));
                 }
             }
-            DetailKind::Mesh { mesh_id, material, colour } => {
+            DetailKind::Mesh {
+                mesh_id,
+                material,
+                colour,
+            } => {
                 if !mesh_transforms.is_empty() {
-                    out.meshes.extend(make_meshes(
-                        *mesh_id,
-                        *material,
-                        mesh_transforms,
-                        *colour,
-                    ));
+                    out.meshes
+                        .extend(make_meshes(*mesh_id, *material, mesh_transforms, *colour));
                 }
             }
             DetailKind::TreeLod {

@@ -13,11 +13,11 @@
 
 mod common;
 
-use viewport_lib::Colour;
 use std::any::Any;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use viewport_lib::Colour;
 
 use eframe::egui;
 use viewport_lib::plugin_api::{
@@ -307,11 +307,15 @@ fn main() -> eframe::Result {
             // Two plugins, registered together: the height generator
             // does the CPU work via ctx.jobs; TerrainPlugin renders the
             // resulting heightmap.
-            renderer.with_item_type_plugin(
-                device,
-                Box::new(HeightGenPlugin::new(trigger.clone(), shared.clone())),
-            );
-            renderer.with_item_type_plugin(device, Box::new(TerrainPlugin::new()));
+            renderer
+                .with_item_type_plugin(
+                    device,
+                    Box::new(HeightGenPlugin::new(trigger.clone(), shared.clone())),
+                )
+                .expect("register item type plugin");
+            renderer
+                .with_item_type_plugin(device, Box::new(TerrainPlugin::new()))
+                .expect("register item type plugin");
 
             rs.renderer.write().callback_resources.insert(renderer);
 
@@ -347,12 +351,11 @@ impl App {
         // Run clicks).
         terrain.splatmaps = [SplatmapData::solid_layer0(), SplatmapData::empty()];
 
-        let camera = Camera {
-            center: glam::Vec3::ZERO,
-            distance: 90.0,
-            orientation: glam::Quat::from_rotation_z(0.6) * glam::Quat::from_rotation_x(1.05),
-            ..Camera::default()
-        };
+        let camera = Camera::orbit(
+            glam::DVec3::ZERO,
+            90.0,
+            glam::Quat::from_rotation_z(0.6) * glam::Quat::from_rotation_x(1.05),
+        );
 
         Self {
             trigger,
@@ -428,11 +431,10 @@ impl eframe::App for App {
 
             ui.input(|i| {
                 self.controller.push_event(ViewportEvent::ModifiersChanged(
-                    viewport_lib::Modifiers {
-                        alt: i.modifiers.alt,
-                        shift: i.modifiers.shift,
-                        ctrl: i.modifiers.command,
-                    },
+                    viewport_lib::Modifiers::NONE
+                        .with_alt(i.modifiers.alt)
+                        .with_shift(i.modifiers.shift)
+                        .with_ctrl(i.modifiers.command),
                 ));
                 if let Some(p) = i.pointer.interact_pos() {
                     let local = glam::Vec2::new(p.x - rect.left(), p.y - rect.top());
@@ -532,4 +534,3 @@ fn make_layers() -> [TerrainLayer; LAYER_COUNT] {
 // ---------------------------------------------------------------------------
 // Paint callback bridging egui_wgpu to the viewport renderer
 // ---------------------------------------------------------------------------
-

@@ -13,9 +13,9 @@
 
 mod common;
 
-use viewport_lib::Colour;
 use eframe::egui;
 use std::sync::Arc;
+use viewport_lib::Colour;
 use viewport_lib::{
     ButtonState, Camera, CameraFrame, FrameData, ItemSettings, LightingSettings,
     OrbitCameraController, PickId, SceneFrame, ScrollUnits, ViewportContext, ViewportEvent,
@@ -58,7 +58,9 @@ fn main() -> eframe::Result {
                 .with_max_lod(DEFAULT_MAX_LOD)
                 .with_skirt_depth(1.5)
                 .with_lod_distance(DEFAULT_LOD_DISTANCE);
-            renderer.with_item_type_plugin(device, Box::new(plugin));
+            renderer
+                .with_item_type_plugin(device, Box::new(plugin))
+                .expect("register item type plugin");
 
             rs.renderer.write().callback_resources.insert(renderer);
             Ok(Box::new(App::new()))
@@ -126,10 +128,11 @@ impl App {
             /* pick_id_base */ 1,
         );
         Self {
-            camera: Camera {
-                distance: ITEM_WORLD_SIZE * DEFAULT_GRID as f32 * 1.3,
-                ..Camera::default()
-            },
+            camera: Camera::orbit(
+                glam::DVec3::ZERO,
+                ITEM_WORLD_SIZE * DEFAULT_GRID as f32 * 1.3,
+                Camera::default().orientation(),
+            ),
             controller: OrbitCameraController::viewport_primitives(),
             items,
             grid: DEFAULT_GRID,
@@ -345,19 +348,21 @@ impl eframe::App for App {
                 ui.checkbox(&mut self.auto_orbit, "Auto-orbit (steady workload)");
                 ui.horizontal(|ui| {
                     if ui.button("Reset (overhead)").clicked() {
-                        self.camera.distance = ITEM_WORLD_SIZE * self.grid as f32 * 1.3;
-                        self.camera.center = glam::Vec3::ZERO;
-                        self.camera.orientation =
-                            glam::Quat::from_rotation_z(0.6) * glam::Quat::from_rotation_x(1.1);
+                        self.camera.set_orbit(
+                            glam::DVec3::ZERO,
+                            ITEM_WORLD_SIZE * self.grid as f32 * 1.3,
+                            glam::Quat::from_rotation_z(0.6) * glam::Quat::from_rotation_x(1.1),
+                        );
                     }
                     if ui.button("Ground view").clicked() {
                         // Camera near terrain height, looking along +X so as
                         // much of the grid stays inside the frustum as
                         // possible. Maximises per-frame patches-visible.
-                        self.camera.center = glam::Vec3::new(0.0, 0.0, HEIGHT_MAX * 0.5);
-                        self.camera.distance = ITEM_WORLD_SIZE * self.grid as f32 * 0.55;
-                        self.camera.orientation =
-                            glam::Quat::from_rotation_z(0.0) * glam::Quat::from_rotation_x(1.55);
+                        self.camera.set_orbit(
+                            glam::DVec3::new(0.0, 0.0, f64::from(HEIGHT_MAX) * 0.5),
+                            ITEM_WORLD_SIZE * self.grid as f32 * 0.55,
+                            glam::Quat::from_rotation_z(0.0) * glam::Quat::from_rotation_x(1.55),
+                        );
                     }
                 });
 
@@ -394,11 +399,10 @@ impl eframe::App for App {
 
             ui.input(|i| {
                 self.controller.push_event(ViewportEvent::ModifiersChanged(
-                    viewport_lib::Modifiers {
-                        alt: i.modifiers.alt,
-                        shift: i.modifiers.shift,
-                        ctrl: i.modifiers.command,
-                    },
+                    viewport_lib::Modifiers::NONE
+                        .with_alt(i.modifiers.alt)
+                        .with_shift(i.modifiers.shift)
+                        .with_ctrl(i.modifiers.command),
                 ));
                 let pointer_in_viewport =
                     i.pointer.interact_pos().map_or(false, |p| rect.contains(p));
@@ -469,8 +473,9 @@ impl eframe::App for App {
             let h = rect.height();
             if self.auto_orbit {
                 let yaw = (dt_ms / 1000.0) * 0.25;
-                self.camera.orientation =
-                    glam::Quat::from_rotation_z(yaw) * self.camera.orientation;
+                self.camera.set_orbit_orientation(
+                    glam::Quat::from_rotation_z(yaw) * self.camera.orientation(),
+                );
                 ctx.request_repaint();
             }
             self.controller.apply_to_camera(&mut self.camera);
@@ -478,7 +483,7 @@ impl eframe::App for App {
 
             let mut camera_frame = CameraFrame::from_camera(&self.camera, [w, h]);
             camera_frame.pixels_per_point = self.last_pixels_per_point;
-            self.last_eye = glam::Vec3::from(camera_frame.render_camera.eye_position);
+            self.last_eye = camera_frame.render_camera.eye_position().as_vec3();
 
             let mut frame_data = FrameData::new(camera_frame, SceneFrame::default());
             frame_data.effects.lighting = LightingSettings::default();
@@ -529,4 +534,3 @@ impl App {
         let _ = Arc::strong_count(&self.items[0].heightmap);
     }
 }
-

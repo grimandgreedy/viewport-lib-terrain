@@ -5,13 +5,9 @@ use std::collections::HashMap;
 use bytemuck::{Pod, Zeroable};
 use viewport_lib::plugin_api::{
     ItemCollections, ItemFrameContext, ItemTypePlugin, OutlineMaskContext, PaintContext,
-    PickPassContext, PickRay, PluginResources, RectPickContext, pick_helpers, shared_wgsl,
+    PickPassContext, PickRay, PluginResources, RectPickContext, depth, pick_helpers, shared_wgsl,
 };
 use viewport_lib::renderer::PickId;
-use viewport_lib::resources::{
-    HDR_COLOR_FORMAT, MASK_COLOR_FORMAT, PICK_COLOR_FORMAT, PICK_DEPTH_CHANNEL_FORMAT,
-    SCENE_DEPTH_FORMAT,
-};
 use wgpu::util::DeviceExt;
 
 use crate::item::TerrainCollection;
@@ -310,6 +306,8 @@ fn build_shader_source() -> String {
     s.push('\n');
     s.push_str(shared_wgsl::SHARED_PICK_WGSL);
     s.push('\n');
+    s.push_str(shared_wgsl::SHARED_SCENE_FRAGMENT_WGSL);
+    s.push('\n');
     s.push_str(include_str!("terrain.wgsl"));
     s
 }
@@ -410,6 +408,12 @@ impl ItemTypePlugin for TerrainPlugin {
         });
 
         let vbuf_layout = mesh::vertex_layout();
+        let opaque_desc = resources.opaque_target_desc();
+        let mask_desc = resources.mask_target_desc();
+        let pick_desc = resources.pick_target_desc();
+        // The HDR scene pass carries the light split at location 1, which
+        // `fs_scene` writes.
+        let opaque_targets = opaque_desc.colour_targets(None, true);
 
         let opaque_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("terrain_opaque_pipeline"),
@@ -422,12 +426,8 @@ impl ItemTypePlugin for TerrainPlugin {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: HDR_COLOR_FORMAT,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                entry_point: Some("fs_scene"),
+                targets: opaque_targets.as_slice(),
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
@@ -436,9 +436,9 @@ impl ItemTypePlugin for TerrainPlugin {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: SCENE_DEPTH_FORMAT,
+                format: opaque_desc.depth_format,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_compare: depth::DEPTH_COMPARE,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -463,7 +463,7 @@ impl ItemTypePlugin for TerrainPlugin {
                 module: &shader,
                 entry_point: Some("viewport_mask_fs"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: MASK_COLOR_FORMAT,
+                    format: mask_desc.color_format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::RED,
                 })],
@@ -475,9 +475,9 @@ impl ItemTypePlugin for TerrainPlugin {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: SCENE_DEPTH_FORMAT,
+                format: mask_desc.depth_format,
                 depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_compare: depth::DEPTH_COMPARE,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -512,9 +512,9 @@ impl ItemTypePlugin for TerrainPlugin {
                 module: &shader,
                 entry_point: Some("viewport_pick_fs"),
                 targets: &[
-                    pick_color(PICK_COLOR_FORMAT),
-                    pick_color(PICK_COLOR_FORMAT),
-                    pick_color(PICK_DEPTH_CHANNEL_FORMAT),
+                    pick_color(pick_desc.object_id_format),
+                    pick_color(pick_desc.primitive_id_format),
+                    pick_color(pick_desc.depth_channel_format),
                 ],
                 compilation_options: Default::default(),
             }),
@@ -524,9 +524,9 @@ impl ItemTypePlugin for TerrainPlugin {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: SCENE_DEPTH_FORMAT,
+                format: pick_desc.depth_stencil_format,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_compare: depth::DEPTH_COMPARE,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -576,7 +576,7 @@ impl ItemTypePlugin for TerrainPlugin {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        _ctx: &ItemFrameContext<'_>,
+        ctx: &ItemFrameContext<'_>,
         items: &ItemCollections<'_>,
     ) -> Vec<wgpu::CommandBuffer> {
         let Some(coll) = items.downcast::<TerrainCollection>() else {
@@ -591,6 +591,9 @@ impl ItemTypePlugin for TerrainPlugin {
         let Some(albedo_sampler) = self.albedo_sampler.as_ref() else {
             return Vec::new();
         };
+        // Vertices are baked in world coordinates; group 0 is relative to the
+        // renderer's world origin, so the model carries the origin's negation.
+        let model = glam::Mat4::from_translation(-ctx.world_origin().as_vec3()).to_cols_array_2d();
         let keys = bake_keys(&coll.items);
         for (item, &key) in coll.items.iter().zip(keys.iter()) {
             let sig = BakeSig {
@@ -668,8 +671,7 @@ impl ItemTypePlugin for TerrainPlugin {
                     item.normal_textures.as_ref(),
                     &norm_sig.dims,
                 );
-                let mask_tex =
-                    create_layer_array_texture(device, &mask_sig, LayerArrayKind::Mask);
+                let mask_tex = create_layer_array_texture(device, &mask_sig, LayerArrayKind::Mask);
                 upload_layer_array(
                     queue,
                     &mask_tex,
@@ -751,11 +753,8 @@ impl ItemTypePlugin for TerrainPlugin {
 
                 if needs_tex_reupload {
                     if !entry.tex_sig.same_texture(&tex_sig) {
-                        entry.layer_tex = create_layer_array_texture(
-                            device,
-                            &tex_sig,
-                            LayerArrayKind::Albedo,
-                        );
+                        entry.layer_tex =
+                            create_layer_array_texture(device, &tex_sig, LayerArrayKind::Albedo);
                         rebind = true;
                     }
                     upload_layer_array(
@@ -769,11 +768,8 @@ impl ItemTypePlugin for TerrainPlugin {
 
                 if needs_norm_reupload {
                     if !entry.norm_sig.same_texture(&norm_sig) {
-                        entry.normal_tex = create_layer_array_texture(
-                            device,
-                            &norm_sig,
-                            LayerArrayKind::Normal,
-                        );
+                        entry.normal_tex =
+                            create_layer_array_texture(device, &norm_sig, LayerArrayKind::Normal);
                         rebind = true;
                     }
                     upload_layer_array(
@@ -787,11 +783,8 @@ impl ItemTypePlugin for TerrainPlugin {
 
                 if needs_mask_reupload {
                     if !entry.mask_sig.same_texture(&mask_sig) {
-                        entry.mask_tex = create_layer_array_texture(
-                            device,
-                            &mask_sig,
-                            LayerArrayKind::Mask,
-                        );
+                        entry.mask_tex =
+                            create_layer_array_texture(device, &mask_sig, LayerArrayKind::Mask);
                         rebind = true;
                     }
                     upload_layer_array(
@@ -821,7 +814,7 @@ impl ItemTypePlugin for TerrainPlugin {
 
             let baked = self.baked.get(&key).unwrap();
             let uniform = ObjectUniform {
-                model: glam::Mat4::IDENTITY.to_cols_array_2d(),
+                model,
                 layers: std::array::from_fn(|i| layer_uniform(&item.surface_layers[i])),
                 height_blend_strength: item.height_blend_strength,
                 height_blend_noise_scale: item.height_blend_noise_scale,
@@ -847,7 +840,7 @@ impl ItemTypePlugin for TerrainPlugin {
         };
         let lod_distance = self.lod_distance.max(1.0);
         let max_lod = self.max_lod.saturating_sub(1);
-        let eye = glam::Vec3::from(ctx.camera.eye_position);
+        let eye = ctx.camera.eye_position().as_vec3();
         let keys = bake_keys(&coll.items);
         for (item, &key) in coll.items.iter().zip(keys.iter()) {
             let _ = item;
@@ -1039,8 +1032,10 @@ impl ItemTypePlugin for TerrainPlugin {
             if item.settings.hidden || !(ctx.wireframe_mode || item.settings.wireframe) {
                 continue;
             }
-            let mut line =
-                viewport_lib::aabb_wireframe_polyline(&item_bounds(item), viewport_lib::Colour::linear(0.7, 0.7, 0.8, 1.0));
+            let mut line = viewport_lib::aabb_wireframe_polyline(
+                &item_bounds(item),
+                viewport_lib::Colour::linear(0.7, 0.7, 0.8, 1.0),
+            );
             line.settings.wireframe = true;
             out.push(line);
         }

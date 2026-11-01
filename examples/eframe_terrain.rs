@@ -7,8 +7,8 @@
 
 mod common;
 
-use viewport_lib::Colour;
 use eframe::egui;
+use viewport_lib::Colour;
 use viewport_lib::{
     ButtonState, Camera, CameraFrame, FrameData, ItemSettings, LightingSettings,
     OrbitCameraController, PickId, SceneFrame, ScrollUnits, ViewportContext, ViewportEvent,
@@ -42,7 +42,9 @@ fn main() -> eframe::Result {
             let format = rs.target_format;
 
             let mut renderer = ViewportRenderer::new(device, common::render_format(format));
-            renderer.with_item_type_plugin(device, Box::new(TerrainPlugin::new()));
+            renderer
+                .with_item_type_plugin(device, Box::new(TerrainPlugin::new()))
+                .expect("register item type plugin");
 
             rs.renderer.write().callback_resources.insert(renderer);
             Ok(Box::new(App::new()))
@@ -153,10 +155,7 @@ impl App {
         terrain.settings = settings;
 
         Self {
-            camera: Camera {
-                distance: 70.0,
-                ..Camera::default()
-            },
+            camera: Camera::orbit(glam::DVec3::ZERO, 70.0, Camera::default().orientation()),
             controller: OrbitCameraController::viewport_primitives(),
             terrain,
             cursor_viewport: None,
@@ -180,11 +179,10 @@ impl eframe::App for App {
 
             ui.input(|i| {
                 self.controller.push_event(ViewportEvent::ModifiersChanged(
-                    viewport_lib::Modifiers {
-                        alt: i.modifiers.alt,
-                        shift: i.modifiers.shift,
-                        ctrl: i.modifiers.command,
-                    },
+                    viewport_lib::Modifiers::NONE
+                        .with_alt(i.modifiers.alt)
+                        .with_shift(i.modifiers.shift)
+                        .with_ctrl(i.modifiers.command),
                 ));
                 if let Some(p) = i.pointer.interact_pos() {
                     let local = glam::Vec2::new(p.x - rect.left(), p.y - rect.top());
@@ -262,7 +260,6 @@ impl eframe::App for App {
         });
     }
 }
-
 
 /// Paint the two splatmaps from the heightmap.
 ///
@@ -355,4 +352,3 @@ fn smoothstep(x: f32, lo: f32, hi: f32) -> f32 {
 fn quantise(x: f32) -> u8 {
     (x.clamp(0.0, 1.0) * 255.0) as u8
 }
-

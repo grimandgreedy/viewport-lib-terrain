@@ -18,13 +18,13 @@
 
 mod common;
 
-use viewport_lib::{Colour, Material, MaterialId};
 use eframe::egui;
 use viewport_lib::{
     ButtonState, Camera, CameraFrame, FrameData, ItemSettings, LightingSettings, MeshId,
-    OrbitCameraController, PickId, SceneFrame, ScrollUnits, TextureId, ViewportContext, ViewportEvent,
-    ViewportRenderer,
+    OrbitCameraController, PickId, SceneFrame, ScrollUnits, TextureId, ViewportContext,
+    ViewportEvent, ViewportRenderer,
 };
+use viewport_lib::{Colour, Material, MaterialId};
 use viewport_lib_terrain::{
     DetailKind, DetailLayer, DetailScatterOutput, DetailScatterParams, LAYER_COUNT, SplatmapData,
     TerrainCollection, TerrainItem, TerrainLayer, TerrainPlugin, scatter_terrain_details,
@@ -60,13 +60,17 @@ fn main() -> eframe::Result {
                 .with_max_lod(4)
                 .with_skirt_depth(2.0)
                 .with_lod_distance(96.0);
-            renderer.with_item_type_plugin(device, Box::new(plugin));
+            renderer
+                .with_item_type_plugin(device, Box::new(plugin))
+                .expect("register item type plugin");
             // Tree impostors and grass billboards are sprites, which draw only once
             // their plugin is registered.
-            renderer.with_item_type_plugin(
-                device,
-                Box::new(viewport_lib_plugins::item_types::sprite::SpritePlugin::default()),
-            );
+            renderer
+                .with_item_type_plugin(
+                    device,
+                    Box::new(viewport_lib_plugins::item_types::sprite::SpritePlugin::default()),
+                )
+                .expect("register item type plugin");
 
             // Low-poly tree and grass tuft from the Kenney nature kit. The tree
             // is scaled to one unit tall so a layer's size is its height in
@@ -98,7 +102,12 @@ fn main() -> eframe::Result {
                 .expect("upload foliage material");
 
             rs.renderer.write().callback_resources.insert(renderer);
-            Ok(Box::new(App::new(tree_id, grass_id, impostor, foliage_material)))
+            Ok(Box::new(App::new(
+                tree_id,
+                grass_id,
+                impostor,
+                foliage_material,
+            )))
         }),
     )
 }
@@ -230,10 +239,7 @@ impl App {
         terrain.settings = settings;
 
         Self {
-            camera: Camera {
-                distance: 120.0,
-                ..Camera::default()
-            },
+            camera: Camera::orbit(glam::DVec3::ZERO, 120.0, Camera::default().orientation()),
             controller: OrbitCameraController::viewport_primitives(),
             terrain,
             cursor_viewport: None,
@@ -347,11 +353,10 @@ impl eframe::App for App {
 
             ui.input(|i| {
                 self.controller.push_event(ViewportEvent::ModifiersChanged(
-                    viewport_lib::Modifiers {
-                        alt: i.modifiers.alt,
-                        shift: i.modifiers.shift,
-                        ctrl: i.modifiers.command,
-                    },
+                    viewport_lib::Modifiers::NONE
+                        .with_alt(i.modifiers.alt)
+                        .with_shift(i.modifiers.shift)
+                        .with_ctrl(i.modifiers.command),
                 ));
                 let pointer_in_viewport =
                     i.pointer.interact_pos().map_or(false, |p| rect.contains(p));
@@ -424,9 +429,9 @@ impl eframe::App for App {
 
             let mut camera_frame = CameraFrame::from_camera(&self.camera, [w, h]);
             camera_frame.pixels_per_point = self.last_pixels_per_point;
-            self.last_eye = glam::Vec3::from(camera_frame.render_camera.eye_position);
-            self.last_forward = glam::Vec3::from(camera_frame.render_camera.forward);
-            self.last_distance = camera_frame.render_camera.distance;
+            self.last_eye = camera_frame.render_camera.eye_position().as_vec3();
+            self.last_forward = camera_frame.render_camera.forward();
+            self.last_distance = self.camera.focus_distance();
 
             // Scatter around the orbit focal point on the ground, not
             // the eye; otherwise the detail footprint slides off the
@@ -469,7 +474,6 @@ impl eframe::App for App {
         });
     }
 }
-
 
 fn build_splatmaps(
     heights: &[u16],
@@ -561,4 +565,3 @@ fn smoothstep(x: f32, lo: f32, hi: f32) -> f32 {
 fn quantise(x: f32) -> u8 {
     (x.clamp(0.0, 1.0) * 255.0) as u8
 }
-

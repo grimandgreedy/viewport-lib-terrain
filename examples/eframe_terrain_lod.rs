@@ -14,8 +14,8 @@
 
 mod common;
 
-use viewport_lib::Colour;
 use eframe::egui;
+use viewport_lib::Colour;
 use viewport_lib::{
     ButtonState, Camera, CameraFrame, FrameData, ItemSettings, LightingSettings,
     OrbitCameraController, PickId, SceneFrame, ScrollUnits, ViewportContext, ViewportEvent,
@@ -55,7 +55,9 @@ fn main() -> eframe::Result {
                 .with_max_lod(4)
                 .with_skirt_depth(2.0)
                 .with_lod_distance(96.0);
-            renderer.with_item_type_plugin(device, Box::new(plugin));
+            renderer
+                .with_item_type_plugin(device, Box::new(plugin))
+                .expect("register item type plugin");
 
             rs.renderer.write().callback_resources.insert(renderer);
             Ok(Box::new(App::new()))
@@ -178,10 +180,7 @@ impl App {
         terrain.settings = settings;
 
         Self {
-            camera: Camera {
-                distance: 220.0,
-                ..Camera::default()
-            },
+            camera: Camera::orbit(glam::DVec3::ZERO, 220.0, Camera::default().orientation()),
             controller: OrbitCameraController::viewport_primitives(),
             terrain,
             cursor_viewport: None,
@@ -228,7 +227,9 @@ impl eframe::App for App {
                         .read()
                         .callback_resources
                         .get::<ViewportRenderer>()
-                        .and_then(|r| r.item_type_plugin::<TerrainPlugin>(viewport_lib_terrain::TYPE_NAME))
+                        .and_then(|r| {
+                            r.item_type_plugin::<TerrainPlugin>(viewport_lib_terrain::TYPE_NAME)
+                        })
                         .map(|p| p.lod_patch_counts())
                 })
                 .unwrap_or_default();
@@ -261,11 +262,10 @@ impl eframe::App for App {
 
             ui.input(|i| {
                 self.controller.push_event(ViewportEvent::ModifiersChanged(
-                    viewport_lib::Modifiers {
-                        alt: i.modifiers.alt,
-                        shift: i.modifiers.shift,
-                        ctrl: i.modifiers.command,
-                    },
+                    viewport_lib::Modifiers::NONE
+                        .with_alt(i.modifiers.alt)
+                        .with_shift(i.modifiers.shift)
+                        .with_ctrl(i.modifiers.command),
                 ));
                 let pointer_in_viewport =
                     i.pointer.interact_pos().map_or(false, |p| rect.contains(p));
@@ -342,7 +342,7 @@ impl eframe::App for App {
 
             let mut camera_frame = CameraFrame::from_camera(&self.camera, [w, h]);
             camera_frame.pixels_per_point = self.last_pixels_per_point;
-            self.last_eye = glam::Vec3::from(camera_frame.render_camera.eye_position);
+            self.last_eye = camera_frame.render_camera.eye_position().as_vec3();
 
             let mut frame_data = FrameData::new(camera_frame, SceneFrame::default());
             frame_data.effects.lighting = LightingSettings::default();
@@ -367,7 +367,6 @@ impl eframe::App for App {
         });
     }
 }
-
 
 /// Build the two splatmaps at `(sw, sh)` resolution from a `(hw, hh)`
 /// heightmap. Bilinearly interpolates the heightmap so the layer
@@ -468,4 +467,3 @@ fn smoothstep(x: f32, lo: f32, hi: f32) -> f32 {
 fn quantise(x: f32) -> u8 {
     (x.clamp(0.0, 1.0) * 255.0) as u8
 }
-

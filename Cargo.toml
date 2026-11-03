@@ -1,6 +1,6 @@
 [package]
 name = "viewport-lib-terrain"
-version = "1.3.0"
+version = "1.2.0"
 edition = "2024"
 description = "Heightmap and splatmap terrain rendering for viewport-lib"
 readme = "README.md"
@@ -22,8 +22,8 @@ default = ["gpu"]
 gpu = ["dep:viewport-lib", "dep:viewport-lib-plugins", "dep:wgpu"]
 
 [dependencies]
-viewport-lib-types = { path = "../../viewport-lib/crates/viewport-lib-types", version = "0.2" }
-viewport-lib = { path = "../../viewport-lib/crates/viewport-lib", version = "0.22", optional = true }
+viewport-lib-types = { path = "../../viewport-lib/crates/viewport-lib-types", version = "0.3" }
+viewport-lib = { path = "../../viewport-lib/crates/viewport-lib", version = "0.23", optional = true }
 # Sprites moved out of the renderer into viewport-lib-plugins; the detail
 # scatter emits them.
 viewport-lib-plugins = { path = "../../viewport-lib/crates/viewport-lib-plugins", version = "0.1", optional = true }

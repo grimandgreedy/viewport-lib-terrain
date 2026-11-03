@@ -59,3 +59,12 @@ cargo run --release --example eframe-plugin-jobs
 - `eframe-plugin-jobs` generates heightmaps on a worker thread.
 
 The textures, heightmap and tree models are in `examples/assets`, and their sources are listed in `examples/assets/CREDITS.md`. The source in [`examples/`](examples/) shows plugin registration, heightmap loading, splatmap packing and detail scatter.
+
+## Versions
+
+| viewport-lib-terrain | viewport-lib |
+| --- | --- |
+| 1.2.0 | 0.23 |
+| 1.1.0 | 0.19 |
+| 1.0.1 | 0.18 |
+| 1.0.0 | 0.17 |

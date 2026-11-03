@@ -59,9 +59,10 @@ pub fn show(ui: &mut egui::Ui, frame: &eframe::Frame, rect: egui::Rect, frame_da
     // Take the slot out so the renderer can be borrowed alongside it.
     let slot = guard.callback_resources.remove::<Slot>().unwrap();
     if let Some(renderer) = guard.callback_resources.get_mut::<ViewportRenderer>() {
-        let cmd = renderer
-            .owned()
-            .render(&rs.device, &rs.queue, slot.target.render_view(), frame_data);
+        let cmd =
+            renderer
+                .owned()
+                .render(&rs.device, &rs.queue, slot.target.render_view(), frame_data);
         rs.queue.submit(std::iter::once(cmd));
     }
     let id = slot.id;

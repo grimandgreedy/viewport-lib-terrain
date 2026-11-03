@@ -32,14 +32,21 @@ pub const RAINIER_ELEVATION_M: [f32; 2] = [497.9, 4388.1];
 /// sample is `height_range[0] + raw / 65535 * (height_range[1] - height_range[0])`.
 pub fn rainier_heightmap(dim: u32) -> Vec<u16> {
     const FILE_DIM: usize = 513;
-    assert!(dim == 513 || dim == 257, "no Rainier heightmap at {dim}x{dim}; use 513 or 257");
+    assert!(
+        dim == 513 || dim == 257,
+        "no Rainier heightmap at {dim}x{dim}; use 513 or 257"
+    );
     let path = dir().join("heightmaps/rainier_513.r16");
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let full: Vec<u16> = bytes
         .chunks_exact(2)
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
-    assert_eq!(full.len(), FILE_DIM * FILE_DIM, "unexpected size for rainier_513.r16");
+    assert_eq!(
+        full.len(),
+        FILE_DIM * FILE_DIM,
+        "unexpected size for rainier_513.r16"
+    );
     if dim as usize == FILE_DIM {
         return full;
     }
@@ -57,7 +64,10 @@ pub fn rainier_heightmap(dim: u32) -> Vec<u16> {
 /// vertical scale of the real terrain times `exaggeration`.
 pub fn rainier_height_range(world_size: f32, exaggeration: f32) -> [f32; 2] {
     let scale = world_size / RAINIER_SPAN_M * exaggeration;
-    [0.0, (RAINIER_ELEVATION_M[1] - RAINIER_ELEVATION_M[0]) * scale]
+    [
+        0.0,
+        (RAINIER_ELEVATION_M[1] - RAINIER_ELEVATION_M[0]) * scale,
+    ]
 }
 
 // ---------------------------------------------------------------------------
@@ -83,21 +93,61 @@ pub struct Ground {
 /// B.b, B.a.
 pub const GROUND: [Ground; LAYER_COUNT] = [
     // 0 grass
-    Ground { dir: "Grass004", source: Source::AmbientCg, tile_metres: 3.0, normal_scale: 1.0 },
+    Ground {
+        dir: "Grass004",
+        source: Source::AmbientCg,
+        tile_metres: 3.0,
+        normal_scale: 1.0,
+    },
     // 1 dirt
-    Ground { dir: "Ground103", source: Source::AmbientCg, tile_metres: 4.0, normal_scale: 1.0 },
+    Ground {
+        dir: "Ground103",
+        source: Source::AmbientCg,
+        tile_metres: 4.0,
+        normal_scale: 1.0,
+    },
     // 2 rock
-    Ground { dir: "Rock051", source: Source::AmbientCg, tile_metres: 6.0, normal_scale: 1.2 },
+    Ground {
+        dir: "Rock051",
+        source: Source::AmbientCg,
+        tile_metres: 6.0,
+        normal_scale: 1.2,
+    },
     // 3 sand
-    Ground { dir: "coast_sand_01", source: Source::PolyHaven, tile_metres: 4.0, normal_scale: 0.8 },
+    Ground {
+        dir: "coast_sand_01",
+        source: Source::PolyHaven,
+        tile_metres: 4.0,
+        normal_scale: 0.8,
+    },
     // 4 pebbles
-    Ground { dir: "Gravel041", source: Source::AmbientCg, tile_metres: 2.0, normal_scale: 1.0 },
+    Ground {
+        dir: "Gravel041",
+        source: Source::AmbientCg,
+        tile_metres: 2.0,
+        normal_scale: 1.0,
+    },
     // 5 moss
-    Ground { dir: "Ground037", source: Source::AmbientCg, tile_metres: 4.0, normal_scale: 1.0 },
+    Ground {
+        dir: "Ground037",
+        source: Source::AmbientCg,
+        tile_metres: 4.0,
+        normal_scale: 1.0,
+    },
     // 6 snow
-    Ground { dir: "Snow014", source: Source::AmbientCg, tile_metres: 4.0, normal_scale: 0.8 },
+    Ground {
+        dir: "Snow014",
+        source: Source::AmbientCg,
+        tile_metres: 4.0,
+        normal_scale: 0.8,
+    },
     // 7 dark rock
-    Ground { dir: "Rock030", source: Source::AmbientCg, tile_metres: 6.0, normal_scale: 1.2 },
+    Ground {
+        dir: "Rock030",
+        source: Source::AmbientCg,
+        tile_metres: 6.0,
+        normal_scale: 1.2,
+    },
 ];
 
 /// Decoded 8-bit RGBA pixels, kept as bytes so the mask channels can be
@@ -114,7 +164,11 @@ fn decode_jpeg(path: &Path) -> Rgba {
         .unwrap_or_else(|e| panic!("decode {}: {e:?}", path.display()));
     let (width, height) = (tex.width(), tex.height());
     match tex.into_payload() {
-        TexturePayload::Rgba8(rgba) => Rgba { width, height, rgba },
+        TexturePayload::Rgba8(rgba) => Rgba {
+            width,
+            height,
+            rgba,
+        },
         _ => panic!("{} did not decode to 8-bit RGBA", path.display()),
     }
 }
@@ -155,7 +209,13 @@ pub fn load_ground() -> GroundTextures {
                 let f = |suffix: &str| d.join(format!("{}_{suffix}_1k.jpg", g.dir));
                 // The packed map is R ambient occlusion, G roughness, B metallic.
                 let arm = decode_jpeg(&f("arm"));
-                (decode_jpeg(&f("diff")), decode_jpeg(&f("nor_gl")), None, arm.clone(), Some(arm))
+                (
+                    decode_jpeg(&f("diff")),
+                    decode_jpeg(&f("nor_gl")),
+                    None,
+                    arm.clone(),
+                    Some(arm),
+                )
             }
         };
         if size == [0, 0] {
@@ -179,7 +239,11 @@ pub fn load_ground() -> GroundTextures {
                 ),
                 Source::PolyHaven => {
                     let arm = metal.as_ref().unwrap();
-                    (arm.rgba[i * 4], 255 - rough.rgba[i * 4 + 1], arm.rgba[i * 4 + 2])
+                    (
+                        arm.rgba[i * 4],
+                        255 - rough.rgba[i * 4 + 1],
+                        arm.rgba[i * 4 + 2],
+                    )
                 }
             };
             m[i * 4] = metallic;
@@ -194,7 +258,11 @@ pub fn load_ground() -> GroundTextures {
     }
 
     let pack = |v: &[TextureData]| LayerTextures::new(v).expect("layer textures");
-    GroundTextures { diffuse: pack(&diffuse), normal: pack(&normal), mask: pack(&mask) }
+    GroundTextures {
+        diffuse: pack(&diffuse),
+        normal: pack(&normal),
+        mask: pack(&mask),
+    }
 }
 
 /// The decoded ground, shared by every terrain in the process. The arrays sit
@@ -237,7 +305,10 @@ fn natural_colour(material: &str) -> Option<[f32; 3]> {
     let name = material.to_ascii_lowercase();
     let srgb = if ["wood", "bark", "trunk"].iter().any(|k| name.contains(k)) {
         [0.30, 0.21, 0.13]
-    } else if ["leaf", "leaves", "grass", "plant", "bush"].iter().any(|k| name.contains(k)) {
+    } else if ["leaf", "leaves", "grass", "plant", "bush"]
+        .iter()
+        .any(|k| name.contains(k))
+    {
         [0.20, 0.36, 0.13]
     } else {
         return None;
@@ -271,7 +342,11 @@ pub fn load_kenney_model(name: &str) -> Model {
             positions.push(m.transform_point3(glam::Vec3::from(*p)).to_array());
         }
         for v in &part.mesh.normals {
-            normals.push(m.transform_vector3(glam::Vec3::from(*v)).normalize_or_zero().to_array());
+            normals.push(
+                m.transform_vector3(glam::Vec3::from(*v))
+                    .normalize_or_zero()
+                    .to_array(),
+            );
         }
         match &part.mesh.uvs {
             Some(u) => {
@@ -372,12 +447,15 @@ pub fn pine_impostor() -> TextureData {
                 let half_base = 34.0 - 6.0 * tier as f32;
                 if fy >= apex && fy <= base {
                     let half = half_base * (fy - apex) / (base - apex);
-                    let a = cover(half - dx.abs()).min(cover(fy - apex)).min(cover(base - fy));
+                    let a = cover(half - dx.abs())
+                        .min(cover(fy - apex))
+                        .min(cover(base - fy));
                     if a > alpha {
                         alpha = a;
                         // Light on the left, shade on the right, darker low in
                         // each tier.
-                        let shade = 1.15 - 0.45 * ((dx / half_base) * 0.5 + 0.5)
+                        let shade = 1.15
+                            - 0.45 * ((dx / half_base) * 0.5 + 0.5)
                             - 0.15 * (fy - apex) / (base - apex);
                         colour = [leaf[0] * shade, leaf[1] * shade, leaf[2] * shade];
                     }

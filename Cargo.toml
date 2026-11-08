@@ -36,7 +36,7 @@ eframe = { version = "=0.33.3", default-features = false, features = ["default_f
 egui = "0.33"
 naga = { version = "27", features = ["wgsl-in"] }
 # Decodes the example textures and tree models under examples/assets.
-viewport-lib-io = { version = "0.8", default-features = false, features = ["jpeg", "png", "gltf"] }
+viewport-lib-io = { version = "0.9", default-features = false, features = ["jpeg", "png", "gltf"] }
 
 [[example]]
 name = "eframe-terrain"

@@ -216,7 +216,7 @@ pub fn scatter_terrain_details(
             let mut s = SpriteItem::default();
             s.texture_id = tex;
             s.positions = positions;
-            s.sizes = sizes;
+            s.sizes = SpriteItem::square_sizes(sizes);
             s.default_colour = colour;
             s.default_size = layer.size;
             s.size_mode = SpriteSizeMode::WorldSpace;

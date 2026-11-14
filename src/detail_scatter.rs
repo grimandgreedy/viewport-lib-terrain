@@ -1,7 +1,7 @@
 //! Scattering detail layers into this frame's sprites and mesh items. Needs
 //! the `gpu` feature, since the output is the renderer's item types.
 
-use viewport_lib::{Colour, MaterialId, MeshId, SceneRenderItem, SpriteBlend, TextureId};
+use viewport_lib::{Colour, MaterialId, MeshId, MeshItem, SpriteBlend, TextureId};
 use viewport_lib_plugins::item_types::sprite::{SpriteItem, SpriteSizeMode};
 
 use crate::TerrainItem;
@@ -14,7 +14,7 @@ pub struct DetailScatterOutput {
     /// One opaque scene item per placed mesh. They go in the frame's surface
     /// items, so they write depth and are occluded by the terrain like any
     /// other opaque geometry. The renderer batches items that share a mesh.
-    pub meshes: Vec<SceneRenderItem>,
+    pub meshes: Vec<MeshItem>,
 }
 
 impl DetailScatterOutput {
@@ -229,11 +229,11 @@ pub fn scatter_terrain_details(
                            material: MaterialId,
                            transforms: Vec<[[f32; 4]; 4]>,
                            colour: Colour|
-         -> Vec<SceneRenderItem> {
+         -> Vec<MeshItem> {
             transforms
                 .into_iter()
                 .map(|model| {
-                    let mut item = SceneRenderItem::new(mesh_id, material);
+                    let mut item = MeshItem::new(mesh_id, material);
                     item.model = model.into();
                     item.settings.colour = Some(colour);
                     item

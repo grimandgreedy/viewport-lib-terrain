@@ -3,7 +3,7 @@
 //! Detail meshes and billboards are not part of the terrain item itself.
 //! The host configures a list of [`DetailLayer`]s, calls
 //! [`scatter_terrain_details`](crate::scatter_terrain_details) once per frame, and submits the returned
-//! `SpriteItem` batches and opaque `SceneRenderItem`s via the regular
+//! `SpriteItem` batches and opaque `MeshItem`s via the regular
 //! sprite and surface-item paths.
 //!
 //! Positions are generated from a Halton(2,3) low-discrepancy sequence

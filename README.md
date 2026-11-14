@@ -64,6 +64,7 @@ The textures, heightmap and tree models are in `examples/assets`, and their sour
 
 | viewport-lib-terrain | viewport-lib |
 | --- | --- |
+| 2.0.0 | 0.24 |
 | 1.2.0 | 0.23 |
 | 1.1.0 | 0.19 |
 | 1.0.1 | 0.18 |

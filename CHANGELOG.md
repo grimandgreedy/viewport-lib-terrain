@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.0]
+
+### Changed
+
+- Works with viewport-lib 0.24. `DetailScatterOutput::meshes` is a `Vec<MeshItem>`, following viewport-lib's rename of `SceneRenderItem`.
+
 ## [1.2.0]
 
 ### Added
